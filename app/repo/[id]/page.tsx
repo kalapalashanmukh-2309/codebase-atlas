@@ -2,6 +2,7 @@
 
 import { use, useState, useEffect } from "react";
 import RepoGraph from "./RepoGraph";
+import InfoPanel from "./InfoPanel";
 
 // ---------------------------------------------------------------------------
 // Types matching the /api/analyze response
@@ -12,10 +13,12 @@ interface GraphNode {
   label: string;
   type: "file" | "folder";
 }
+
 interface GraphEdge {
   from: string;
   to: string;
 }
+
 interface AnalyzeResponse {
   overview: string;
   files: string[];
@@ -29,29 +32,32 @@ interface AnalyzeResponse {
 /**
  * /repo/[id] — Repository detail page.
  *
- * On mount, calls /api/analyze with the decoded repo URL and renders:
- *   1. The decoded GitHub URL
- *   2. An interactive force-directed graph of TS files
- *   3. A Q&A input wired to /api/ask
+ * Uses a simple column layout to display:
+ *   1. Repository URL Header
+ *   2. Analysis state (loading, error, or InfoPanel + AI Overview + Dependency Graph)
+ *   3. Q&A section with dedicated loading, error, and answer states
  */
 export default function RepoPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  // In Next.js 16 client components, params is a Promise — unwrap with use()
+  // Unwrap route params
   const { id } = use(params);
   const repoUrl = decodeURIComponent(id);
 
-  // --- Analysis state ---
+  // --- Analyze state ---
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AnalyzeResponse | null>(null);
 
   // --- Q&A state ---
   const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
 
-  // --- Fetch analysis on mount ---
+  // --- Fetch repository analysis on mount ---
   useEffect(() => {
     let cancelled = false;
 
@@ -71,13 +77,13 @@ export default function RepoPage({
         if (cancelled) return;
 
         if (!res.ok || json.error) {
-          setError(json.error ?? `Request failed (${res.status})`);
+          setError(json.error ?? `Analysis request failed with status ${res.status}`);
         } else {
           setData(json as AnalyzeResponse);
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unknown error");
+          setError(err instanceof Error ? err.message : "Unknown error during analysis.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -90,58 +96,105 @@ export default function RepoPage({
     };
   }, [repoUrl]);
 
-  // --- Handler: call /api/ask and log the result ---
+  // --- Handler: submit question to /api/ask ---
   async function handleAsk() {
-    if (!question.trim()) return;
+    if (!question.trim() || asking) return;
+
+    setAsking(true);
+    setAskError(null);
+    setAnswer(null);
+
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl, question }),
+        body: JSON.stringify({ repoUrl, question: question.trim() }),
       });
+
       const json = await res.json();
-      console.log("Ask response:", json);
+
+      if (!res.ok || json.error) {
+        setAskError(json.error ?? `Q&A request failed with status ${res.status}`);
+      } else {
+        setAnswer(json.answer);
+      }
     } catch (err) {
-      console.error("Ask request failed:", err);
+      setAskError(err instanceof Error ? err.message : "Failed to fetch Q&A answer.");
+    } finally {
+      setAsking(false);
     }
   }
 
   return (
-    <main style={{ padding: "2rem", maxWidth: "64rem", margin: "0 auto" }}>
-      {/* ---- Header ---- */}
-      <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Repository</h1>
-      <p style={{ marginTop: "0.5rem", wordBreak: "break-all" }}>{repoUrl}</p>
+    <main
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "2rem",
+        padding: "2rem",
+        maxWidth: "64rem",
+        margin: "0 auto",
+      }}
+    >
+      {/* 1. Header */}
+      <header style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+        <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Repository</h1>
+        <p style={{ wordBreak: "break-all", color: "#94a3b8" }}>{repoUrl}</p>
+      </header>
 
-      {/* ---- Loading state ---- */}
+      {/* 2. Analyze Loading State */}
       {loading && (
-        <p style={{ marginTop: "1.5rem", color: "#888" }}>
-          Analyzing repo…
-        </p>
+        <div
+          style={{
+            padding: "1.5rem",
+            borderRadius: "8px",
+            background: "#1e293b",
+            border: "1px solid #334155",
+            color: "#94a3b8",
+          }}
+        >
+          Analyzing repository structure and generating AI overview…
+        </div>
       )}
 
-      {/* ---- Error state ---- */}
+      {/* 3. Analyze Error State */}
       {error && (
-        <p style={{ marginTop: "1.5rem", color: "#ef4444" }}>
-          Error: {error}
-        </p>
+        <div
+          style={{
+            padding: "1.5rem",
+            borderRadius: "8px",
+            background: "#450a0a",
+            border: "1px solid #991b1b",
+            color: "#fca5a5",
+          }}
+        >
+          <strong>Analysis Error:</strong> {error}
+        </div>
       )}
 
-      {/* ---- Analysis results ---- */}
+      {/* 4. Analyze Success View */}
       {data && (
-        <>
-          {/* Overview */}
-          <p style={{ marginTop: "1rem", color: "#666" }}>{data.overview}</p>
+        <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          {/* Metadata info cards */}
+          <InfoPanel
+            repoUrl={repoUrl}
+            filesCount={data.files.length}
+            nodesCount={data.graph.nodes.length}
+            edgesCount={data.graph.edges.length}
+          />
 
-          {/* File count summary */}
-          <p style={{ marginTop: "0.5rem", fontSize: "0.9rem", color: "#888" }}>
-            {data.files.length} TypeScript file{data.files.length !== 1 && "s"}{" "}
-            found · {data.graph.nodes.length} nodes ·{" "}
-            {data.graph.edges.length} edges
-          </p>
+          {/* AI Overview paragraph */}
+          <p style={{ color: "#cbd5e1", lineHeight: 1.6 }}>{data.overview}</p>
 
-          {/* Graph */}
-          <div style={{ marginTop: "1.5rem" }}>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.75rem" }}>
+          {/* Interactive Force Graph */}
+          <div>
+            <h2
+              style={{
+                fontSize: "1.25rem",
+                fontWeight: 600,
+                marginBottom: "0.75rem",
+              }}
+            >
               Dependency Graph
             </h2>
             <RepoGraph nodes={data.graph.nodes} edges={data.graph.edges} />
@@ -151,38 +204,116 @@ export default function RepoPage({
               · Hover for labels · Click to log node info
             </p>
           </div>
-        </>
+        </section>
       )}
 
-      {/* ---- Q&A section ---- */}
-      <hr style={{ margin: "2rem 0" }} />
-      <section>
-        <h2 style={{ fontSize: "1.25rem", fontWeight: 600, marginBottom: "0.5rem" }}>
-          Ask a question
+      {/* 5. Q&A Section */}
+      <section
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
+          borderTop: "1px solid #334155",
+          paddingTop: "2rem",
+        }}
+      >
+        <h2 style={{ fontSize: "1.25rem", fontWeight: 600 }}>
+          Ask a question about this repository
         </h2>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <input
-            type="text"
+
+        {/* Input box and action button */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask a question about this repo…"
+            placeholder="e.g. How is routing set up? Where are the main components located?"
+            rows={3}
             style={{
-              flex: 1,
-              padding: "0.5rem",
-              border: "1px solid #ccc",
-              borderRadius: "4px",
+              width: "100%",
+              padding: "0.75rem",
+              borderRadius: "6px",
+              border: "1px solid #334155",
+              background: "#1e293b",
+              color: "#f8fafc",
+              fontSize: "0.95rem",
+              resize: "vertical",
             }}
           />
-          <button
-            onClick={handleAsk}
-            style={{ padding: "0.5rem 1rem", cursor: "pointer" }}
-          >
-            Ask
-          </button>
+          <div>
+            <button
+              onClick={handleAsk}
+              disabled={asking || !question.trim()}
+              style={{
+                padding: "0.6rem 1.5rem",
+                borderRadius: "6px",
+                border: "none",
+                background: asking || !question.trim() ? "#475569" : "#2563eb",
+                color: "#ffffff",
+                fontWeight: 600,
+                cursor: asking || !question.trim() ? "not-allowed" : "pointer",
+              }}
+            >
+              {asking ? "Thinking..." : "Ask Question"}
+            </button>
+          </div>
         </div>
-        <p style={{ fontSize: "0.85rem", color: "#888", marginTop: "0.25rem" }}>
-          Check the browser console for the response.
-        </p>
+
+        {/* Ask Loading State */}
+        {asking && (
+          <div
+            style={{
+              padding: "1rem",
+              borderRadius: "6px",
+              background: "#1e293b",
+              border: "1px solid #334155",
+              color: "#94a3b8",
+            }}
+          >
+            Searching repository context and generating answer…
+          </div>
+        )}
+
+        {/* Ask Error State */}
+        {askError && (
+          <div
+            style={{
+              padding: "1rem",
+              borderRadius: "6px",
+              background: "#450a0a",
+              border: "1px solid #991b1b",
+              color: "#fca5a5",
+            }}
+          >
+            <strong>Q&amp;A Error:</strong> {askError}
+          </div>
+        )}
+
+        {/* Ask Answer Display */}
+        {answer && (
+          <div
+            style={{
+              padding: "1.25rem",
+              borderRadius: "8px",
+              background: "#1e293b",
+              border: "1px solid #334155",
+              color: "#f8fafc",
+            }}
+          >
+            <h3
+              style={{
+                fontSize: "1rem",
+                fontWeight: 600,
+                color: "#38bdf8",
+                marginBottom: "0.5rem",
+              }}
+            >
+              Answer
+            </h3>
+            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: "0.95rem" }}>
+              {answer}
+            </div>
+          </div>
+        )}
       </section>
     </main>
   );

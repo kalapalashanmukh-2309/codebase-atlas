@@ -242,3 +242,77 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// File Content & Context Selection Helpers for Q&A
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch text content of a file from GitHub using raw.githubusercontent.com.
+ * Returns up to maxChars (default 2000) to keep LLM context light.
+ */
+export async function fetchFileContent(
+  owner: string,
+  repo: string,
+  path: string,
+  maxChars = 2000
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/${path}`,
+      { headers: githubHeaders() }
+    );
+
+    if (!res.ok) return null;
+
+    const text = await res.text();
+    if (text.length > maxChars) {
+      return text.slice(0, maxChars) + "\n...[truncated]";
+    }
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Select top relevant file paths for a user's question.
+ * Ranks by matching keywords in the path, falling back to key entrypoints or first files.
+ */
+export function selectRelevantFiles(
+  files: string[],
+  question: string,
+  limit = 4
+): string[] {
+  const keywords = question
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+
+  const scored = files.map((file) => {
+    const lower = file.toLowerCase();
+    let score = 0;
+
+    for (const kw of keywords) {
+      if (lower.includes(kw)) score += 10;
+    }
+
+    // Boost common entry point and config files
+    if (
+      lower.endsWith("index.ts") ||
+      lower.endsWith("index.tsx") ||
+      lower.endsWith("app/page.tsx") ||
+      lower.endsWith("main.ts") ||
+      lower.endsWith("route.ts")
+    ) {
+      score += 3;
+    }
+
+    return { file, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((item) => item.file);
+}
+

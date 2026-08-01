@@ -38,7 +38,7 @@ interface GeminiResponse {
 const FALLBACK_OVERVIEW =
   "Could not generate an AI overview. The repository contains TypeScript source files — explore the graph below for structure.";
 
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-3.1-flash-lite-preview";
 
 // ---------------------------------------------------------------------------
 // Public API

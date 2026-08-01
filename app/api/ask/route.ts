@@ -1,26 +1,80 @@
 /**
  * POST /api/ask
  *
- * Accepts { repoUrl: string, question: string } and returns a hard-coded answer.
- * This will be replaced with real Q&A logic later.
+ * Accepts { repoUrl: string, question: string }, fetches repo metadata and
+ * relevant file snippets, and uses AI to answer the user's question.
  */
-export async function POST(request: Request) {
-  const body = await request.json();
-  const { repoUrl, question } = body as {
-    repoUrl: string;
-    question: string;
-  };
+import {
+  parseGitHubUrl,
+  fetchRepoTree,
+  buildAnalyzeResult,
+  selectRelevantFiles,
+  fetchFileContent,
+} from "@/lib/github";
+import { answerQuestion } from "@/lib/qa";
 
-  // Guard: require both fields
-  if (!repoUrl || !question) {
+export async function POST(request: Request) {
+  let body: { repoUrl?: string; question?: string };
+
+  try {
+    body = await request.json();
+  } catch {
     return Response.json(
-      { error: "repoUrl and question are required" },
+      { error: "Invalid JSON request body." },
       { status: 400 }
     );
   }
 
-  // Hard-coded mock response for now
-  return Response.json({
-    answer: "This is a test Q&A response.",
-  });
+  const { repoUrl, question } = body;
+
+  if (!repoUrl || !question || !question.trim()) {
+    return Response.json(
+      { error: "both repoUrl and question are required." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    // 1. Parse GitHub URL
+    const { owner, repo } = parseGitHubUrl(repoUrl);
+
+    // 2. Fetch repo tree & build graph context
+    const tree = await fetchRepoTree(owner, repo);
+    const analysis = buildAnalyzeResult(tree);
+
+    // 3. Select top relevant files based on the question
+    const targetFiles = selectRelevantFiles(analysis.files, question, 4);
+
+    // 4. Concurrently fetch file content snippets
+    const snippetPromises = targetFiles.map(async (filePath) => {
+      const content = await fetchFileContent(owner, repo, filePath, 2000);
+      return content ? { path: filePath, content } : null;
+    });
+
+    const snippetResults = await Promise.all(snippetPromises);
+    const snippets = snippetResults.filter(
+      (s): s is { path: string; content: string } => s !== null
+    );
+
+    // 5. Extract top-level folder names
+    const folders = analysis.graph.nodes
+      .filter((n) => n.type === "folder")
+      .map((n) => n.label);
+
+    // 6. Generate AI answer
+    const answer = await answerQuestion({
+      repoUrl,
+      question: question.trim(),
+      folders,
+      files: analysis.files,
+      snippets,
+    });
+
+    return Response.json({ answer });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "An unexpected error occurred.";
+
+    return Response.json({ error: message }, { status: 500 });
+  }
 }
