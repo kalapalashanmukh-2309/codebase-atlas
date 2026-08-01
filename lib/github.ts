@@ -86,6 +86,25 @@ export function parseGitHubUrl(raw: string): { owner: string; repo: string } {
 // ---------------------------------------------------------------------------
 
 /**
+ * Build the common headers for GitHub API requests.
+ * If GITHUB_TOKEN is set in the environment, it is included as a Bearer
+ * token — this raises the rate limit from 60 to 5,000 requests per hour.
+ */
+function githubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "codebase-atlas",
+  };
+
+  const token = process.env.GITHUB_TOKEN;
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+/**
  * Fetch the full file tree for a repo using the Git Trees API.
  * Uses the default branch (fetched via /repos/:owner/:repo first).
  *
@@ -99,19 +118,17 @@ export async function fetchRepoTree(
   // 1. Get the default branch name
   const repoRes = await fetch(
     `https://api.github.com/repos/${owner}/${repo}`,
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-        // User-Agent is required by GitHub API
-        "User-Agent": "codebase-atlas",
-      },
-    }
+    { headers: githubHeaders() }
   );
 
   if (!repoRes.ok) {
     const body = await repoRes.text();
+    const hint =
+      repoRes.status === 403
+        ? " Set GITHUB_TOKEN in .env.local to raise the rate limit."
+        : "";
     throw new Error(
-      `GitHub API error (${repoRes.status}) fetching repo info: ${body}`
+      `GitHub API error (${repoRes.status}) fetching repo info: ${body}${hint}`
     );
   }
 
@@ -121,12 +138,7 @@ export async function fetchRepoTree(
   // 2. Fetch the full recursive tree in one call
   const treeRes = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "codebase-atlas",
-      },
-    }
+    { headers: githubHeaders() }
   );
 
   if (!treeRes.ok) {
