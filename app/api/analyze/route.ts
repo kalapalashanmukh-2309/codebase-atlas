@@ -2,13 +2,15 @@
  * POST /api/analyze
  *
  * Accepts { repoUrl: string }, fetches the repo's file tree from GitHub,
- * collects TypeScript files, and returns a basic graph structure.
+ * collects TypeScript files, generates an AI overview, and returns a
+ * basic graph structure.
  */
 import {
   parseGitHubUrl,
   fetchRepoTree,
   buildAnalyzeResult,
 } from "@/lib/github";
+import { generateOverview } from "@/lib/overview";
 
 export async function POST(request: Request) {
   let body: { repoUrl?: string };
@@ -40,6 +42,18 @@ export async function POST(request: Request) {
 
     // 3. Build the analysis result (TS files + graph)
     const result = buildAnalyzeResult(tree);
+
+    // 4. Generate an AI overview (single LLM call, falls back gracefully)
+    const folders = result.graph.nodes
+      .filter((n) => n.type === "folder")
+      .map((n) => n.label);
+    const sampleFiles = result.files.slice(0, 20);
+
+    result.overview = await generateOverview({
+      repoUrl,
+      folders,
+      sampleFiles,
+    });
 
     return Response.json(result);
   } catch (err: unknown) {
