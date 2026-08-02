@@ -27,6 +27,7 @@ interface AnalyzeResponse {
   overview: string;
   files: string[];
   graph: { nodes: GraphNode[]; edges: GraphEdge[] };
+  noSupportedFiles?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,121 +315,153 @@ function RepoPageInner() {
       )}
 
       {/* 4. Analyze Success View */}
-      {data && activeGraph && (
+      {data && (
         <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           {/* Metadata info cards */}
           <InfoPanel
             repoUrl={repoUrl}
             filesCount={data.files.length}
-            nodesCount={activeGraph.nodes.length}
-            edgesCount={activeGraph.edges.length}
+            nodesCount={activeGraph?.nodes.length ?? 0}
+            edgesCount={activeGraph?.edges.length ?? 0}
           />
 
-          {/* AI Overview card */}
-          {(() => {
-            const isFallback =
-              data.overview.startsWith("Could not generate") ||
-              data.overview.startsWith("GEMINI_API_KEY");
-
-            return (
-              <div
-                style={{
-                  padding: "1.25rem",
-                  borderRadius: "8px",
-                  background: isFallback ? "#1c1917" : "#1e293b",
-                  border: `1px solid ${isFallback ? "#854d0e" : "#334155"}`,
-                }}
-              >
-                <h2
-                  style={{
-                    fontSize: "1rem",
-                    fontWeight: 600,
-                    marginBottom: "0.5rem",
-                    color: isFallback ? "#fbbf24" : "#38bdf8",
-                  }}
-                >
-                  {isFallback ? "⚠ AI Overview Unavailable" : "✨ AI Overview of This Repository"}
-                </h2>
-                <p
-                  style={{
-                    margin: 0,
-                    lineHeight: 1.6,
-                    fontSize: "0.95rem",
-                    color: isFallback ? "#d6d3d1" : "#cbd5e1",
-                  }}
-                >
-                  {data.overview}
-                </p>
-              </div>
-            );
-          })()}
-
-          {/* Interactive Force Graph */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {data.noSupportedFiles || data.files.length === 0 ? (
             <div
               style={{
+                padding: "1.5rem",
+                borderRadius: "8px",
+                background: "#1e293b",
+                border: "1px solid #eab308",
+                color: "#fef08a",
                 display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
+                flexDirection: "column",
                 gap: "0.75rem",
               }}
             >
-              <h2
-                style={{
-                  fontSize: "1.25rem",
-                  fontWeight: 600,
-                }}
-              >
-                Dependency Graph
-              </h2>
-
-              {/* Mode Toggle */}
-              <div
-                style={{
-                  display: "flex",
-                  background: "#1e293b",
-                  padding: "0.25rem",
-                  borderRadius: "6px",
-                  border: "1px solid #334155",
-                }}
-              >
-                <button
-                  onClick={() => setGraphMode("high-level")}
-                  style={{
-                    padding: "0.35rem 0.85rem",
-                    borderRadius: "4px",
-                    border: "none",
-                    background: graphMode === "high-level" ? "#2563eb" : "transparent",
-                    color: graphMode === "high-level" ? "#ffffff" : "#94a3b8",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  High-level
-                </button>
-                <button
-                  onClick={() => setGraphMode("detailed")}
-                  style={{
-                    padding: "0.35rem 0.85rem",
-                    borderRadius: "4px",
-                    border: "none",
-                    background: graphMode === "detailed" ? "#2563eb" : "transparent",
-                    color: graphMode === "detailed" ? "#ffffff" : "#94a3b8",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  Detailed
-                </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontSize: "1.25rem" }}>ℹ️</span>
+                <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fef08a", margin: 0 }}>
+                  No TypeScript or JavaScript Files Found
+                </h2>
               </div>
+              <p style={{ margin: 0, lineHeight: 1.6, color: "#cbd5e1" }}>
+                This repository doesn’t contain any TypeScript or JavaScript files, so Codebase Atlas can’t build a graph or overview for it yet.
+              </p>
+              <p style={{ margin: 0, fontSize: "0.9rem", color: "#94a3b8" }}>
+                💡 <em>You can still try asking questions about the repo below, but some features may be limited.</em>
+              </p>
             </div>
+          ) : (
+            <>
+              {/* AI Overview card */}
+              {(() => {
+                const isFallback =
+                  data.overview.startsWith("Could not generate") ||
+                  data.overview.startsWith("GEMINI_API_KEY");
 
-            <GraphExplanation />
-            <RepoGraph nodes={activeGraph.nodes} edges={activeGraph.edges} />
-          </div>
+                return (
+                  <div
+                    style={{
+                      padding: "1.25rem",
+                      borderRadius: "8px",
+                      background: isFallback ? "#1c1917" : "#1e293b",
+                      border: `1px solid ${isFallback ? "#854d0e" : "#334155"}`,
+                    }}
+                  >
+                    <h2
+                      style={{
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                        marginBottom: "0.5rem",
+                        color: isFallback ? "#fbbf24" : "#38bdf8",
+                      }}
+                    >
+                      {isFallback ? "⚠ AI Overview Unavailable" : "✨ AI Overview of This Repository"}
+                    </h2>
+                    <p
+                      style={{
+                        margin: 0,
+                        lineHeight: 1.6,
+                        fontSize: "0.95rem",
+                        color: isFallback ? "#d6d3d1" : "#cbd5e1",
+                      }}
+                    >
+                      {data.overview}
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* Interactive Force Graph */}
+              {activeGraph && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    <h2
+                      style={{
+                        fontSize: "1.25rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Dependency Graph
+                    </h2>
+
+                    {/* Mode Toggle */}
+                    <div
+                      style={{
+                        display: "flex",
+                        background: "#1e293b",
+                        padding: "0.25rem",
+                        borderRadius: "6px",
+                        border: "1px solid #334155",
+                      }}
+                    >
+                      <button
+                        onClick={() => setGraphMode("high-level")}
+                        style={{
+                          padding: "0.35rem 0.85rem",
+                          borderRadius: "4px",
+                          border: "none",
+                          background: graphMode === "high-level" ? "#2563eb" : "transparent",
+                          color: graphMode === "high-level" ? "#ffffff" : "#94a3b8",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        High-level
+                      </button>
+                      <button
+                        onClick={() => setGraphMode("detailed")}
+                        style={{
+                          padding: "0.35rem 0.85rem",
+                          borderRadius: "4px",
+                          border: "none",
+                          background: graphMode === "detailed" ? "#2563eb" : "transparent",
+                          color: graphMode === "detailed" ? "#ffffff" : "#94a3b8",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Detailed
+                      </button>
+                    </div>
+                  </div>
+
+                  <GraphExplanation />
+                  <RepoGraph nodes={activeGraph.nodes} edges={activeGraph.edges} />
+                </div>
+              )}
+            </>
+          )}
         </section>
       )}
 

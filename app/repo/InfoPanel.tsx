@@ -71,7 +71,7 @@ export default function InfoPanel({
       {/* TS file count */}
       <div>
         <p style={{ fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>
-          TypeScript Files
+          Source Files
         </p>
         <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "#f8fafc" }}>{filesCount}</p>
       </div>

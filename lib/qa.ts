@@ -141,7 +141,7 @@ function buildUserPrompt(input: AskQuestionInput): string {
   let prompt = `## Repository
 URL: ${repoUrl}
 Top-level folders: ${topFolders}
-Total TypeScript/TSX files: ${files.length}
+Total source files (TS/JS): ${files.length}
 
 `;
 

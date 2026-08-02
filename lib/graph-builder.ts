@@ -97,8 +97,8 @@ export function isImportantFile(filePath: string, scopePrefix = ""): boolean {
   const segments = relative.split("/");
   const filename = segments[segments.length - 1];
 
-  // Base name without extensions (e.g. "index.ts" -> "index", "route.ts" -> "route")
-  const baseName = filename.replace(/\.(tsx?|jsx?|d\.ts)$/, "").toLowerCase();
+  // Base name without extensions (e.g. "index.js" -> "index", "route.ts" -> "route")
+  const baseName = filename.replace(/\.(tsx?|jsx?|mjs|cjs|d\.ts)$/, "").toLowerCase();
 
   if (IMPORTANT_BASE_NAMES.has(baseName)) {
     return true;
@@ -126,7 +126,7 @@ export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
       : filePath;
   const segments = relative.split("/");
   const filename = segments[segments.length - 1];
-  const baseName = filename.replace(/\.(tsx?|jsx?|d\.ts)$/, "").toLowerCase();
+  const baseName = filename.replace(/\.(tsx?|jsx?|mjs|cjs|d\.ts)$/, "").toLowerCase();
 
   // 1. Test files (e.g. *.test.ts, *.spec.tsx, index.test-d.ts)
   if (

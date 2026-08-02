@@ -31,7 +31,7 @@ export default function GraphExplanation() {
         }}
       >
         <li>
-          Each node is a folder or TypeScript file found in the repository.{" "}
+          Each node is a folder or source file (TS/JS) found in the repository.{" "}
           <span style={{ color: "#6366f1" }}>■</span>{" "}
           <strong style={{ color: "#c7d2fe" }}>Purple</strong> = folder,{" "}
           <span style={{ color: "#22d3ee" }}>■</span>{" "}

@@ -23,6 +23,7 @@ export interface AnalyzeResult {
   overview: string;
   files: string[];
   graph: RepoGraph;
+  noSupportedFiles: boolean;
 }
 
 /** Shape of a single item returned by the GitHub Git Trees API. */
@@ -184,12 +185,23 @@ export async function fetchRepoTree(
 // Graph building
 // ---------------------------------------------------------------------------
 
-/** Maximum number of TypeScript files we'll include to keep responses sane. */
-const MAX_TS_FILES = 200;
+/** Supported source file extensions: TypeScript and JavaScript variants. */
+const SUPPORTED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+
+/**
+ * Checks if a file path belongs to a supported source code file type (.ts, .tsx, .js, .jsx, .mjs, .cjs).
+ */
+export function isSupportedFile(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+/** Maximum number of source files we'll include to keep responses sane. */
+const MAX_SOURCE_FILES = 200;
 
 /**
  * Given the raw tree from GitHub, build the AnalyzeResult:
- *  - Collect .ts / .tsx file paths (capped at MAX_TS_FILES)
+ *  - Collect .ts, .tsx, .js, .jsx, .mjs, .cjs file paths (capped at MAX_SOURCE_FILES)
  *  - Prefer files under `src/` if that directory exists, otherwise use repo root
  *  - Create graph nodes for top-level folders and files within the scope
  *  - Create edges from each folder to the files it contains
@@ -203,24 +215,29 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
   // The prefix we scope to: "src/" if it exists, otherwise "" (repo root)
   const scopePrefix = hasSrc ? "src/" : "";
 
-  // --- Collect TypeScript files within scope ---
-  const tsFiles = tree
+  // --- Collect source files within scope ---
+  const sourceFiles = tree
     .filter(
       (item) =>
         item.type === "blob" &&
         item.path.startsWith(scopePrefix) &&
-        (item.path.endsWith(".ts") || item.path.endsWith(".tsx"))
+        isSupportedFile(item.path)
     )
-    .slice(0, MAX_TS_FILES)
+    .slice(0, MAX_SOURCE_FILES)
     .map((item) => item.path);
 
+  const noSupportedFiles = sourceFiles.length === 0;
+
   // --- Build graph nodes and edges using buildGraph helper ---
-  const graph = buildGraph(tsFiles, "high-level");
+  const graph = buildGraph(sourceFiles, "high-level");
 
   return {
-    overview: "Temporary placeholder overview. Real AI overview will come later.",
-    files: tsFiles,
+    overview: noSupportedFiles
+      ? "This repository does not contain any supported TypeScript or JavaScript source files."
+      : "Temporary placeholder overview. Real AI overview will come later.",
+    files: sourceFiles,
     graph,
+    noSupportedFiles,
   };
 }
 
@@ -358,7 +375,7 @@ export function selectRelevantFiles(
     // e.g. "src/api/routes/auth.ts" → ["src", "api", "routes", "auth.ts"]
     const segments = lower.split("/");
     // Also split segments on hyphens for compound names like "auth-controller"
-    const tokens = segments.flatMap((s) => s.replace(/\.(ts|tsx)$/, "").split("-"));
+    const tokens = segments.flatMap((s) => s.replace(/\.(tsx?|jsx?|mjs|cjs)$/, "").split("-"));
 
     let score = 0;
 

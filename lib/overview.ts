@@ -36,7 +36,7 @@ interface GeminiResponse {
 // ---------------------------------------------------------------------------
 
 const FALLBACK_OVERVIEW =
-  "Could not generate an AI overview. The repository contains TypeScript source files — explore the graph below for structure.";
+  "Could not generate an AI overview. The repository contains source files — explore the graph below for structure.";
 
 const GEMINI_MODEL = "gemini-3.1-flash-lite-preview";
 
@@ -125,7 +125,7 @@ Repository URL: ${repoUrl}
 
 Top-level folders: ${folderList}
 
-Sample TypeScript files:
+Sample source files (TS/JS):
 ${fileList}
 
 Instructions:
