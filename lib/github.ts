@@ -45,38 +45,64 @@ interface GitTreeResponse {
 // URL parsing
 // ---------------------------------------------------------------------------
 
+const INVALID_URL_ERROR =
+  "Invalid GitHub repository URL. Expected format: https://github.com/owner/repo";
+
 /**
- * Extract the `owner` and `repo` from a GitHub URL.
- * Handles forms like:
- *   https://github.com/owner/repo
- *   https://github.com/owner/repo/tree/main/src
- *   http://github.com/owner/repo.git
+ * Extract `owner` and `repo` from a GitHub URL.
  *
- * Throws if the URL doesn't look like a valid GitHub repo URL.
+ * Examples of valid input and normalized output:
+ *  - "https://github.com/owner/repo"             -> { owner: "owner", repo: "repo" }
+ *  - "https://github.com/owner/repo/"            -> { owner: "owner", repo: "repo" }
+ *  - "https://github.com/owner/repo/tree/main"   -> { owner: "owner", repo: "repo" }
+ *  - "https://github.com/owner/repo/blob/m/a.ts"  -> { owner: "owner", repo: "repo" }
+ *  - "https://github.com/owner/repo.git"         -> { owner: "owner", repo: "repo" }
+ *  - "github.com/owner/repo"                     -> { owner: "owner", repo: "repo" }
+ *
+ * Throws an Error with INVALID_URL_ERROR if invalid.
  */
 export function parseGitHubUrl(raw: string): { owner: string; repo: string } {
+  if (!raw || typeof raw !== "string") {
+    throw new Error(INVALID_URL_ERROR);
+  }
+
+  let input = raw.trim();
+  if (!input) {
+    throw new Error(INVALID_URL_ERROR);
+  }
+
+  // Prepend protocol if omitted (e.g. "github.com/owner/repo")
+  if (!/^https?:\/\//i.test(input)) {
+    input = `https://${input}`;
+  }
+
   let url: URL;
   try {
-    url = new URL(raw.trim());
+    url = new URL(input);
   } catch {
-    throw new Error(`Invalid URL: ${raw}`);
+    throw new Error(INVALID_URL_ERROR);
   }
 
-  if (!url.hostname.endsWith("github.com")) {
-    throw new Error("URL must be a github.com URL.");
+  // Validate hostname
+  const hostname = url.hostname.toLowerCase();
+  if (hostname !== "github.com" && hostname !== "www.github.com") {
+    throw new Error(INVALID_URL_ERROR);
   }
 
-  // pathname looks like "/owner/repo/..." — split and grab first two parts
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (parts.length < 2) {
-    throw new Error(
-      "URL must include owner and repo, e.g. https://github.com/owner/repo"
-    );
+  // Split pathname into non-empty segments
+  // E.g. "/owner/repo/tree/main" -> ["owner", "repo", "tree", "main"]
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments.length < 2) {
+    throw new Error(INVALID_URL_ERROR);
   }
 
-  const owner = parts[0];
-  // Strip a trailing ".git" if present
-  const repo = parts[1].replace(/\.git$/, "");
+  const owner = segments[0];
+  // Strip trailing ".git" if present (case-insensitive)
+  const repo = segments[1].replace(/\.git$/i, "");
+
+  if (!owner || !repo) {
+    throw new Error(INVALID_URL_ERROR);
+  }
 
   return { owner, repo };
 }

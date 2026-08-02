@@ -75,6 +75,16 @@ export async function POST(request: Request) {
     const message =
       err instanceof Error ? err.message : "An unexpected error occurred.";
 
-    return Response.json({ error: message }, { status: 500 });
+    let status = 500;
+    if (
+      message.includes("Invalid GitHub repository URL") ||
+      message.includes("404")
+    ) {
+      status = 400;
+    } else if (message.includes("403")) {
+      status = 429;
+    }
+
+    return Response.json({ error: message }, { status });
   }
 }

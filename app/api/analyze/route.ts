@@ -60,8 +60,15 @@ export async function POST(request: Request) {
     const message =
       err instanceof Error ? err.message : "Unknown error occurred.";
 
-    // Surface rate-limit errors as 429, everything else as 500
-    const status = message.includes("403") ? 429 : 500;
+    let status = 500;
+    if (
+      message.includes("Invalid GitHub repository URL") ||
+      message.includes("404")
+    ) {
+      status = 400;
+    } else if (message.includes("403")) {
+      status = 429;
+    }
 
     return Response.json({ error: message }, { status });
   }

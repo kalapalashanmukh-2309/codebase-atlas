@@ -3,6 +3,7 @@
 import { use, useState, useEffect } from "react";
 import RepoGraph from "./RepoGraph";
 import InfoPanel from "./InfoPanel";
+import GraphExplanation from "./GraphExplanation";
 
 // ---------------------------------------------------------------------------
 // Types matching the /api/analyze response
@@ -157,7 +158,7 @@ export default function RepoPage({
         </div>
       )}
 
-      {/* 3. Analyze Error State */}
+      {/* 3. Analyze Error State Banner */}
       {error && (
         <div
           style={{
@@ -166,9 +167,52 @@ export default function RepoPage({
             background: "#450a0a",
             border: "1px solid #991b1b",
             color: "#fca5a5",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
           }}
         >
-          <strong>Analysis Error:</strong> {error}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+            <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#fecaca" }}>
+              Unable to analyze repository
+            </h2>
+          </div>
+
+          <p style={{ margin: 0, lineHeight: 1.5, color: "#fee2e2" }}>{error}</p>
+
+          <div
+            style={{
+              marginTop: "0.25rem",
+              padding: "0.75rem 1rem",
+              borderRadius: "6px",
+              background: "rgba(0, 0, 0, 0.25)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              fontSize: "0.9rem",
+              color: "#fecaca",
+            }}
+          >
+            💡 <strong>Expected GitHub URL format:</strong>{" "}
+            <code style={{ fontFamily: "monospace" }}>https://github.com/owner/repository</code>
+          </div>
+
+          <div style={{ marginTop: "0.5rem" }}>
+            <a
+              href="/"
+              style={{
+                display: "inline-block",
+                padding: "0.5rem 1rem",
+                borderRadius: "6px",
+                background: "#ef4444",
+                color: "#ffffff",
+                textDecoration: "none",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+              }}
+            >
+              ← Try another repository URL
+            </a>
+          </div>
         </div>
       )}
 
@@ -183,26 +227,57 @@ export default function RepoPage({
             edgesCount={data.graph.edges.length}
           />
 
-          {/* AI Overview paragraph */}
-          <p style={{ color: "#cbd5e1", lineHeight: 1.6 }}>{data.overview}</p>
+          {/* AI Overview card */}
+          {(() => {
+            const isFallback =
+              data.overview.startsWith("Could not generate") ||
+              data.overview.startsWith("GEMINI_API_KEY");
+
+            return (
+              <div
+                style={{
+                  padding: "1.25rem",
+                  borderRadius: "8px",
+                  background: isFallback ? "#1c1917" : "#1e293b",
+                  border: `1px solid ${isFallback ? "#854d0e" : "#334155"}`,
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: "1rem",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: isFallback ? "#fbbf24" : "#38bdf8",
+                  }}
+                >
+                  {isFallback ? "⚠ AI Overview Unavailable" : "✨ AI Overview of This Repository"}
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    lineHeight: 1.6,
+                    fontSize: "0.95rem",
+                    color: isFallback ? "#d6d3d1" : "#cbd5e1",
+                  }}
+                >
+                  {data.overview}
+                </p>
+              </div>
+            );
+          })()}
 
           {/* Interactive Force Graph */}
-          <div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             <h2
               style={{
                 fontSize: "1.25rem",
                 fontWeight: 600,
-                marginBottom: "0.75rem",
               }}
             >
               Dependency Graph
             </h2>
+            <GraphExplanation />
             <RepoGraph nodes={data.graph.nodes} edges={data.graph.edges} />
-            <p style={{ fontSize: "0.8rem", color: "#888", marginTop: "0.5rem" }}>
-              <span style={{ color: "#6366f1" }}>■</span> Folder&nbsp;&nbsp;
-              <span style={{ color: "#22d3ee" }}>■</span> File&nbsp;&nbsp;
-              · Hover for labels · Click to log node info
-            </p>
           </div>
         </section>
       )}
