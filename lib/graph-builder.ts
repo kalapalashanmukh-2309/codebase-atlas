@@ -29,40 +29,83 @@ export interface BuiltGraph {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Base Name Lists & Constants
 // ---------------------------------------------------------------------------
 
 /**
- * Patterns matching low-value or auxiliary files that should be filtered out
- * in high-level mode to reduce visual noise.
+ * Base filenames (without extensions) considered central entry points.
+ * In high-level mode, these are always preserved as standalone file nodes.
  */
-function isLowValueFile(filePath: string): boolean {
-  const lower = filePath.toLowerCase();
+const IMPORTANT_BASE_NAMES = new Set([
+  "index",
+  "main",
+  "app",
+  "cli",
+  "server",
+  "config",
+  "env",
+  "router",
+  "store",
+  "page",
+  "layout",
+  "route",
+  "options",
+  "utils",
+  "helper",
+  "helpers",
+]);
 
-  // Test and declaration files
-  if (
-    lower.endsWith(".test.ts") ||
-    lower.endsWith(".test.tsx") ||
-    lower.endsWith(".spec.ts") ||
-    lower.endsWith(".spec.tsx") ||
-    lower.endsWith(".test-d.ts") ||
-    lower.endsWith(".d.ts")
-  ) {
+/**
+ * Deep utility module names that introduce visual noise when located deep
+ * in the directory tree (depth >= 3).
+ */
+const LOW_VALUE_DEEP_MODULE_NAMES = new Set([
+  "utils",
+  "helpers",
+  "types",
+  "constants",
+]);
+
+// ---------------------------------------------------------------------------
+// Helper Functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the top-level folder name relative to scope (e.g., "components", "routes"),
+ * or null if the file is at the scope root level.
+ */
+export function getTopLevelFolder(filePath: string, scopePrefix = ""): string | null {
+  const relative =
+    scopePrefix && filePath.startsWith(scopePrefix)
+      ? filePath.slice(scopePrefix.length)
+      : filePath;
+  const segments = relative.split("/");
+  return segments.length > 1 ? segments[0] : null;
+}
+
+/**
+ * RATIONALE for Important Files:
+ * Keeps core entry points, routing, app setup, state stores, CLI tools, and config
+ * modules visible as individual nodes even in high-level mode, allowing developers
+ * to quickly locate key architectural anchors.
+ */
+export function isImportantFile(filePath: string, scopePrefix = ""): boolean {
+  const relative =
+    scopePrefix && filePath.startsWith(scopePrefix)
+      ? filePath.slice(scopePrefix.length)
+      : filePath;
+  const segments = relative.split("/");
+  const filename = segments[segments.length - 1];
+
+  // Base name without extensions (e.g. "index.ts" -> "index", "route.ts" -> "route")
+  const baseName = filename.replace(/\.(tsx?|jsx?|d\.ts)$/, "").toLowerCase();
+
+  if (IMPORTANT_BASE_NAMES.has(baseName)) {
     return true;
   }
 
-  // Files inside test/fixture directories
-  const segments = lower.split("/");
-  if (
-    segments.some(
-      (s) =>
-        s === "__tests__" ||
-        s === "test" ||
-        s === "tests" ||
-        s === "__specs__" ||
-        s === "fixtures"
-    )
-  ) {
+  // Additional Rule: index.* directly under src/ or repo root is always important
+  if (baseName === "index" && segments.length === 1) {
     return true;
   }
 
@@ -70,33 +113,59 @@ function isLowValueFile(filePath: string): boolean {
 }
 
 /**
- * Well-known entry-point and central configuration file names.
- * These are preserved as standalone file nodes even in high-level mode.
+ * RATIONALE for Low-Value Files:
+ * Test files, type declaration files, and deeply nested utility/type modules
+ * produce significant visual clutter without adding architectural insight.
+ * Filtering them in high-level mode creates a clean topology focused on core modules.
  */
-const IMPORTANT_FILE_NAMES = new Set([
-  "index.ts",
-  "index.tsx",
-  "main.ts",
-  "main.tsx",
-  "app.ts",
-  "app.tsx",
-  "cli.ts",
-  "cli.tsx",
-  "server.ts",
-  "server.tsx",
-  "config.ts",
-  "config.tsx",
-  "env.ts",
-  "env.tsx",
-  "page.tsx",
-  "layout.tsx",
-  "route.ts",
-  "options.ts",
-]);
+export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
+  const lower = filePath.toLowerCase();
+  const relative =
+    scopePrefix && filePath.startsWith(scopePrefix)
+      ? filePath.slice(scopePrefix.length)
+      : filePath;
+  const segments = relative.split("/");
+  const filename = segments[segments.length - 1];
+  const baseName = filename.replace(/\.(tsx?|jsx?|d\.ts)$/, "").toLowerCase();
 
-function isImportantFile(filePath: string): boolean {
-  const filename = filePath.split("/").pop()?.toLowerCase() || "";
-  return IMPORTANT_FILE_NAMES.has(filename);
+  // 1. Test files (e.g. *.test.ts, *.spec.tsx, index.test-d.ts)
+  if (
+    lower.includes(".test.") ||
+    lower.includes(".spec.") ||
+    lower.endsWith(".test-d.ts")
+  ) {
+    return true;
+  }
+
+  // Files in test/fixture directories (e.g., test/, tests/, __tests__/)
+  if (
+    segments.some(
+      (s) =>
+        s === "test" ||
+        s === "tests" ||
+        s === "__tests__" ||
+        s === "spec" ||
+        s === "specs" ||
+        s === "fixtures"
+    )
+  ) {
+    return true;
+  }
+
+  // 2. Type declaration files (*.d.ts)
+  if (lower.endsWith(".d.ts")) {
+    return true;
+  }
+
+  // 3. Deep utility/helper/type/constant files (depth >= 3, e.g. src/components/foo/utils.ts)
+  if (
+    LOW_VALUE_DEEP_MODULE_NAMES.has(baseName) &&
+    segments.length >= 3
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +176,7 @@ function isImportantFile(filePath: string): boolean {
  * Builds nodes and edges for the dependency graph given a list of file paths.
  *
  * @param files List of TypeScript file paths in the repo
- * @param mode  "high-level" (collapsed folders & noise filtered) or "detailed" (all files)
+ * @param mode  "high-level" (folder collapsing & noise reduction) or "detailed" (all files)
  */
 export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
   // Determine scope prefix: "src/" if src exists in paths, otherwise ""
@@ -129,39 +198,39 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
   if (mode === "high-level") {
     // -----------------------------------------------------------------------
     // HIGH-LEVEL MODE:
-    // 1. Filter out low-value (test, spec, .d.ts) files.
-    // 2. Collapse regular files under the same top-level folder into a single folder node.
-    // 3. Retain important files (index.ts, main.ts, page.tsx, etc.) as standalone file nodes.
+    // 1. Filter out low-value files (tests, .d.ts, deep utils).
+    // 2. Collapse non-important files under the same top-level folder into a folder node.
+    // 3. Keep important files (index, main, app, cli, etc.) as standalone file nodes.
     // -----------------------------------------------------------------------
-    const filtered = files.filter((f) => !isLowValueFile(f));
+    const filtered = files.filter((f) => !isLowValueFile(f, scopePrefix));
 
     for (const filePath of filtered) {
-      const relative = scopePrefix && filePath.startsWith(scopePrefix)
-        ? filePath.slice(scopePrefix.length)
-        : filePath;
+      const topFolder = getTopLevelFolder(filePath, scopePrefix);
+      const relative =
+        scopePrefix && filePath.startsWith(scopePrefix)
+          ? filePath.slice(scopePrefix.length)
+          : filePath;
+      const filename = relative.split("/").pop() || "";
 
-      const segments = relative.split("/");
-
-      if (segments.length > 1) {
+      if (topFolder !== null) {
         // File lives inside a folder
-        const folderName = segments[0];
-        const folderId = scopePrefix + folderName;
+        const folderId = scopePrefix + topFolder;
 
-        // Ensure folder node exists
+        // Create folder node for the top-level directory
         if (!nodeMap.has(folderId)) {
           nodeMap.set(folderId, {
             id: folderId,
-            label: folderName,
+            label: topFolder,
             type: "folder",
           });
         }
 
-        // If file is an important entry point, render it as a standalone file node
-        if (isImportantFile(filePath)) {
+        // If file is important, render it as a standalone file node linked to the folder
+        if (isImportantFile(filePath, scopePrefix)) {
           if (!nodeMap.has(filePath)) {
             nodeMap.set(filePath, {
               id: filePath,
-              label: segments[segments.length - 1],
+              label: filename,
               type: "file",
             });
           }
@@ -173,7 +242,7 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
         if (!nodeMap.has(filePath)) {
           nodeMap.set(filePath, {
             id: filePath,
-            label: segments[0],
+            label: filename,
             type: "file",
           });
         }
@@ -185,20 +254,20 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
     // Render all files as individual file nodes and link them to their folders.
     // -----------------------------------------------------------------------
     for (const filePath of files) {
-      const relative = scopePrefix && filePath.startsWith(scopePrefix)
-        ? filePath.slice(scopePrefix.length)
-        : filePath;
+      const topFolder = getTopLevelFolder(filePath, scopePrefix);
+      const relative =
+        scopePrefix && filePath.startsWith(scopePrefix)
+          ? filePath.slice(scopePrefix.length)
+          : filePath;
+      const filename = relative.split("/").pop() || "";
 
-      const segments = relative.split("/");
-
-      if (segments.length > 1) {
-        const folderName = segments[0];
-        const folderId = scopePrefix + folderName;
+      if (topFolder !== null) {
+        const folderId = scopePrefix + topFolder;
 
         if (!nodeMap.has(folderId)) {
           nodeMap.set(folderId, {
             id: folderId,
-            label: folderName,
+            label: topFolder,
             type: "folder",
           });
         }
@@ -206,7 +275,7 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
         if (!nodeMap.has(filePath)) {
           nodeMap.set(filePath, {
             id: filePath,
-            label: segments[segments.length - 1],
+            label: filename,
             type: "file",
           });
         }
@@ -216,7 +285,7 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
         if (!nodeMap.has(filePath)) {
           nodeMap.set(filePath, {
             id: filePath,
-            label: segments[0],
+            label: filename,
             type: "file",
           });
         }
@@ -224,7 +293,7 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
     }
   }
 
-  let nodes = Array.from(nodeMap.values());
+  const nodes = Array.from(nodeMap.values());
 
   // Fallback: If high-level mode filtered out all files, fall back to detailed mode
   if (mode === "high-level" && nodes.length === 0 && files.length > 0) {
