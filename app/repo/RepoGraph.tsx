@@ -47,15 +47,15 @@ interface GraphData {
 type ForceGraph2DComponent = React.ComponentType<any>;
 
 // ---------------------------------------------------------------------------
-// Color Palette (Consistent, Clean Visual System)
+// Color Palette (Sci-Fi Dark Theme Visual System)
 // ---------------------------------------------------------------------------
 
 const COLOR_DEFAULT_FILE = "#38bdf8"; // Primary cyan-blue for standard source files
 const COLOR_IMPORTANT_FILE = "#34d399"; // Bright emerald teal accent for entry points (index, main, cli)
-const COLOR_LOW_VALUE_FILE = "#64748b"; // Muted slate gray for utility / low-value files
+const COLOR_LOW_VALUE_FILE = "#475569"; // Muted slate gray for utility / low-value files
 const COLOR_FOLDER = "#6366f1"; // Muted indigo for folder containers
-const COLOR_WORKSPACE = "#a855f7"; // Soft purple for monorepo workspace packages
-const COLOR_FOCUS = "#fbbf24"; // Vibrant gold for Q&A focused files
+const COLOR_WORKSPACE = "#c084fc"; // Soft neon purple for monorepo workspace packages
+const COLOR_FOCUS = "#fbbf24"; // Vibrant glowing gold for Q&A focused files
 
 // Helper: Calculate node radius based on visual hierarchy
 function getNodeRadius(node: GraphNode, focused: boolean): number {
@@ -90,11 +90,10 @@ function getLinkId(endpoint: string | { id: string }): string {
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
- * Layout & Force Tuning:
- * - Tuned D3 charge force (-350) for ample node repulsion & zero overlapping.
- * - Centering & gravity decay (velocityDecay: 0.35) for stable, centered topologies.
- * - Interactive node hover: connected edges brighten in cyan, connected neighbors
- *   remain bright, and unrelated nodes/edges fade out smoothly.
+ * Sci-Fi Futuristic Theme:
+ * - Deep navy space background (#030712) with subtle glow inset.
+ * - Soft canvas radial glow halos on nodes (`shadowBlur`).
+ * - Animated particle light beams on hover connected edges.
  */
 export default function RepoGraph({
   nodes,
@@ -221,10 +220,11 @@ export default function RepoGraph({
       ref={containerRef}
       style={{
         width: "100%",
-        border: "1px solid #334155",
-        borderRadius: "8px",
+        border: "1px solid #1e293b",
+        borderRadius: "10px",
         overflow: "hidden",
-        background: "#0f172a", // slate-900 dark background
+        background: "#030712", // Deep space navy dark theme
+        boxShadow: "0 0 25px rgba(56, 189, 248, 0.08) inset, 0 10px 30px rgba(0, 0, 0, 0.6)",
       }}
     >
       <FG2D
@@ -232,7 +232,7 @@ export default function RepoGraph({
         graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
-        /* ---- Custom Node Rendering with Fading ---- */
+        /* ---- Custom Node Rendering with Subtle Sci-Fi Glow ---- */
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = node.label;
           const focused = isFocusedNode(node);
@@ -240,48 +240,54 @@ export default function RepoGraph({
           const radius = getNodeRadius(node, focused);
           const color = getNodeColor(node, focused);
           const fontSize = (focused ? 13 : isWorkspace ? 12 : 11) / globalScale;
+          const isHovered = hoverNode && hoverNode.id === node.id;
 
           if (node.x === undefined || node.y === undefined) return;
 
           // Fade out nodes unrelated to current hover selection
           const isNeighbor = !hoverNode || hoverNeighborSet.has(node.id);
           ctx.save();
-          ctx.globalAlpha = isNeighbor ? 1.0 : 0.25;
+          ctx.globalAlpha = isNeighbor ? 1.0 : 0.2;
 
-          // Outer halo for focused node
+          // Outer halo glow for focused node
           if (focused) {
             ctx.beginPath();
-            ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
+            ctx.arc(node.x, node.y, radius + 6, 0, 2 * Math.PI, false);
             ctx.fillStyle = "rgba(251, 191, 36, 0.35)";
             ctx.fill();
           }
 
-          // Outer ring for hovered node
-          if (hoverNode && hoverNode.id === node.id) {
+          // Outer cyan aura for hovered node
+          if (isHovered) {
             ctx.beginPath();
-            ctx.arc(node.x, node.y, radius + 4, 0, 2 * Math.PI, false);
-            ctx.fillStyle = "rgba(56, 189, 248, 0.35)";
+            ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
+            ctx.fillStyle = "rgba(56, 189, 248, 0.4)";
             ctx.fill();
           }
 
-          // Node circle
+          // Node circle with canvas radial shadow blur glow
           ctx.beginPath();
           ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+          ctx.shadowBlur = (focused ? 12 : isHovered ? 10 : node.isImportant ? 7 : 4) / globalScale;
+          ctx.shadowColor = color;
           ctx.fillStyle = color;
           ctx.fill();
-          ctx.strokeStyle = focused ? "#ffffff" : "rgba(255, 255, 255, 0.25)";
-          ctx.lineWidth = (focused ? 2 : 0.5) / globalScale;
+
+          // Reset shadowBlur for stroke and label text
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = focused ? "#ffffff" : "rgba(255, 255, 255, 0.3)";
+          ctx.lineWidth = (focused ? 2 : 0.6) / globalScale;
           ctx.stroke();
 
           // Label rendering (focused nodes, hovered nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
-          if (focused || (hoverNode && hoverNode.id === node.id) || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
+          if (focused || isHovered || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
             ctx.font = `${focused || node.isImportant || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillStyle = focused
               ? "#fbbf24"
               : isWorkspace
-              ? "#c084fc"
+              ? "#e9d5ff"
               : node.isImportant
               ? "#6ee7b7"
               : "#f8fafc";
@@ -304,15 +310,15 @@ export default function RepoGraph({
         cooldownTicks={150}
         /* ---- Dynamic Link Appearance ---- */
         linkColor={(link: GraphLink) => {
-          if (!hoverNode) return "rgba(148, 163, 184, 0.22)"; // Thin, subtle line by default
+          if (!hoverNode) return "rgba(56, 189, 248, 0.16)"; // Thin, subtle sci-fi cyan line by default
 
           const sId = getLinkId(link.source);
           const tId = getLinkId(link.target);
           const isConnected = sId === hoverNode.id || tId === hoverNode.id;
 
           return isConnected
-            ? "rgba(56, 189, 248, 0.95)" // Bright cyan highlight for connected edges!
-            : "rgba(148, 163, 184, 0.05)"; // Faded out for unrelated edges
+            ? "rgba(56, 189, 248, 0.95)" // Glowing cyan highlight for connected edges!
+            : "rgba(148, 163, 184, 0.04)"; // Faded out for unrelated edges
         }}
         linkWidth={(link: GraphLink) => {
           if (!hoverNode) return 1;
@@ -324,9 +330,19 @@ export default function RepoGraph({
           if (!hoverNode) return 3.5;
           const sId = getLinkId(link.source);
           const tId = getLinkId(link.target);
-          return sId === hoverNode.id || tId === hoverNode.id ? 5 : 1.5;
+          return sId === hoverNode.id || tId === hoverNode.id ? 6 : 1.5;
         }}
         linkDirectionalArrowRelPos={1}
+        /* ---- Particle Light Beams on Hover ---- */
+        linkDirectionalParticles={(link: GraphLink) => {
+          if (!hoverNode) return 0;
+          const sId = getLinkId(link.source);
+          const tId = getLinkId(link.target);
+          return sId === hoverNode.id || tId === hoverNode.id ? 3 : 0;
+        }}
+        linkDirectionalParticleWidth={2.5}
+        linkDirectionalParticleSpeed={0.008}
+        linkDirectionalParticleColor={() => "#38bdf8"}
         /* ---- Interaction ---- */
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
