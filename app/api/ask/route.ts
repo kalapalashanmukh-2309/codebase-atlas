@@ -76,6 +76,7 @@ export async function POST(request: Request) {
       focusFiles: result.focusFiles,
       summary: result.summary,
       isFlowQuestion: result.isFlowQuestion,
+      codeSnippets: result.codeSnippets,
     });
   } catch (err: unknown) {
     const message =

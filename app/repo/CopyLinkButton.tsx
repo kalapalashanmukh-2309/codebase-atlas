@@ -1,23 +1,52 @@
 "use client";
 
 import { useState } from "react";
+import { buildRepoUrl } from "@/lib/url-builder";
+import type { GraphMode } from "@/lib/graph-builder";
+
+interface CopyLinkButtonProps {
+  label?: string;
+  repoUrl?: string | null;
+  graphMode?: GraphMode;
+  focusFile?: string | null;
+  focusFiles?: string[];
+}
 
 /**
- * CopyLinkButton — copies current URL to clipboard with user feedback
+ * CopyLinkButton — copies current view URL to clipboard with user feedback
  */
-export default function CopyLinkButton() {
+export default function CopyLinkButton({
+  label = "Copy link to this view",
+  repoUrl,
+  graphMode,
+  focusFile,
+  focusFiles,
+}: CopyLinkButtonProps) {
   const [copied, setCopied] = useState<boolean | null>(null);
   const [error, setError] = useState(false);
 
   async function handleCopy() {
     try {
-      if (typeof window !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(window.location.href);
-        setCopied(true);
-        setError(false);
-        setTimeout(() => setCopied(null), 3000);
-      } else {
-        throw new Error("Clipboard API unavailable");
+      if (typeof window !== "undefined") {
+        let textToCopy = window.location.href;
+
+        if (repoUrl) {
+          const relativeUrl = buildRepoUrl(repoUrl, {
+            graphMode,
+            focusFile,
+            focusFiles,
+          });
+          textToCopy = `${window.location.origin}${relativeUrl}`;
+        }
+
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(textToCopy);
+          setCopied(true);
+          setError(false);
+          setTimeout(() => setCopied(null), 3000);
+        } else {
+          throw new Error("Clipboard API unavailable");
+        }
       }
     } catch {
       setError(true);
@@ -37,17 +66,17 @@ export default function CopyLinkButton() {
           display: "inline-flex",
           alignItems: "center",
           gap: "0.4rem",
-          padding: "0.5rem 0.85rem",
+          padding: "0.45rem 0.85rem",
           borderRadius: "6px",
           background: "#1e293b",
           border: "1px solid #334155",
           color: "#f8fafc",
-          fontSize: "0.875rem",
+          fontSize: "0.85rem",
           fontWeight: 500,
           cursor: "pointer",
         }}
       >
-        <span>🔗</span> Copy link to this analysis
+        <span>🔗</span> {label}
       </button>
 
       {copied && (

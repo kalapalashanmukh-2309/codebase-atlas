@@ -13,6 +13,11 @@ export default function DocsPage() {
       desc: "Node.js command-line interface framework",
     },
     {
+      name: "facebook/docusaurus",
+      url: "https://github.com/facebook/docusaurus",
+      desc: "Monorepo documentation site builder with multiple packages",
+    },
+    {
       name: "facebook/react",
       url: "https://github.com/facebook/react",
       desc: "UI library for building component-based interfaces",
@@ -113,15 +118,35 @@ export default function DocsPage() {
             <strong>2. File &amp; Node Filtering:</strong> Analyzes TypeScript and JavaScript files (<code style={{ color: "#38bdf8" }}>.ts</code>, <code style={{ color: "#38bdf8" }}>.tsx</code>, <code style={{ color: "#38bdf8" }}>.js</code>, <code style={{ color: "#38bdf8" }}>.jsx</code>, <code style={{ color: "#38bdf8" }}>.mjs</code>, <code style={{ color: "#38bdf8" }}>.cjs</code>).
           </li>
           <li>
-            <strong>3. Visual Graph &amp; High-Level Collapsing:</strong> Generates an interactive force-directed graph. High-level mode collapses deep files into folder nodes while preserving primary entry points (e.g. <code style={{ color: "#38bdf8" }}>index.ts</code>, <code style={{ color: "#38bdf8" }}>app.tsx</code>, <code style={{ color: "#38bdf8" }}>cli.ts</code>).
+            <strong>3. Visual Graph &amp; Workspace Grouping:</strong> Generates an interactive force-directed graph. High-level mode collapses deep files into folder nodes while preserving primary entry points (e.g. <code style={{ color: "#38bdf8" }}>index.ts</code>, <code style={{ color: "#38bdf8" }}>app.tsx</code>, <code style={{ color: "#38bdf8" }}>cli.ts</code>).
           </li>
           <li>
-            <strong>4. Targeted Q&amp;A:</strong> Uses a domain-aware scoring algorithm to select the most relevant file content snippets and feeds them into Gemini AI for honest, codebase-grounded answers.
+            <strong>4. Monorepo Support:</strong> Codebase Atlas detects workspaces (e.g. <code style={{ color: "#c084fc" }}>apps/*</code>, <code style={{ color: "#c084fc" }}>packages/*</code>, pnpm-workspace, Turbo, and Lerna) and displays them as top-level groups in the graph.
+          </li>
+          <li>
+            <strong>5. Targeted Q&amp;A &amp; Snippets:</strong> Uses a domain-aware scoring algorithm to select the most relevant file content snippets and feeds them into Gemini AI for honest, codebase-grounded answers.
           </li>
         </ul>
       </section>
 
-      {/* Section 2.5: Recommended Questions & Guided Tours */}
+      {/* Section 2.5: Monorepo Support */}
+      <section
+        style={{
+          background: "#1e293b",
+          border: "1px solid #334155",
+          borderRadius: "8px",
+          padding: "1.5rem",
+        }}
+      >
+        <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "#a855f7", marginTop: 0, marginBottom: "0.75rem" }}>
+          📦 Monorepo &amp; Multi-Package Architecture
+        </h2>
+        <p style={{ margin: 0, color: "#cbd5e1", lineHeight: 1.6 }}>
+          Codebase Atlas automatically detects multi-package layouts and monorepo tools (including <code style={{ color: "#c084fc" }}>apps/*</code>, <code style={{ color: "#c084fc" }}>packages/*</code>, pnpm workspaces, Turborepo, and Lerna). Rather than displaying a flat list of disconnected files, it structures the codebase around distinct workspace package nodes so you can explore how applications and internal packages interact.
+        </p>
+      </section>
+
+      {/* Section 2.6: Recommended Questions & Guided Tours */}
       <section
         style={{
           background: "#1e293b",

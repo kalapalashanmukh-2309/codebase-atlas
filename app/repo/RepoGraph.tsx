@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 // ---------------------------------------------------------------------------
 
 interface RepoGraphProps {
-  nodes: { id: string; label: string; type: "file" | "folder" }[];
+  nodes: { id: string; label: string; type: "file" | "folder" | "workspace" }[];
   edges: { from: string; to: string }[];
   focusFile?: string | null;
   highlightedFiles?: string[];
@@ -20,7 +20,7 @@ interface RepoGraphProps {
 interface GraphNode {
   id: string;
   label: string;
-  type: "file" | "folder";
+  type: "file" | "folder" | "workspace";
   x?: number;
   y?: number;
 }
@@ -43,6 +43,7 @@ type ForceGraph2DComponent = React.ComponentType<any>;
 // ---------------------------------------------------------------------------
 
 const FOLDER_COLOR = "#6366f1"; // indigo-500
+const WORKSPACE_COLOR = "#a855f7"; // purple-500
 const FILE_COLOR = "#22d3ee"; // cyan-400
 const FOCUS_COLOR = "#fbbf24"; // amber-400
 
@@ -54,11 +55,10 @@ const FOCUS_COLOR = "#fbbf24"; // amber-400
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
+ * - Workspace nodes are purple circles with package labels.
  * - Folder nodes are indigo circles.
  * - File nodes are cyan circles.
  * - Focused & highlighted files glow in gold with bold labels.
- * - Hovering a node shows its label.
- * - Clicking a node logs its info to console.
  */
 export default function RepoGraph({
   nodes,
@@ -150,9 +150,16 @@ export default function RepoGraph({
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = node.label;
           const focused = isFocusedNode(node);
-          const fontSize = (focused ? 13 : 11) / globalScale;
-          const radius = focused ? 8 : node.type === "folder" ? 6 : 4;
-          const color = focused ? FOCUS_COLOR : node.type === "folder" ? FOLDER_COLOR : FILE_COLOR;
+          const isWorkspace = node.type === "workspace";
+          const fontSize = (focused ? 13 : isWorkspace ? 12 : 11) / globalScale;
+          const radius = focused ? 9 : isWorkspace ? 7 : node.type === "folder" ? 6 : 4;
+          const color = focused
+            ? FOCUS_COLOR
+            : isWorkspace
+            ? WORKSPACE_COLOR
+            : node.type === "folder"
+            ? FOLDER_COLOR
+            : FILE_COLOR;
 
           if (node.x === undefined || node.y === undefined) return;
 
@@ -173,12 +180,12 @@ export default function RepoGraph({
           ctx.lineWidth = (focused ? 2 : 0.5) / globalScale;
           ctx.stroke();
 
-          // Label rendering (always for focused node or when zoomed in)
-          if (focused || globalScale > 1.8) {
-            ctx.font = `${focused ? "bold " : ""}${fontSize}px Sans-Serif`;
+          // Label rendering (always for focused / workspace node or when zoomed in)
+          if (focused || isWorkspace || globalScale > 1.8) {
+            ctx.font = `${focused || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = focused ? "#fbbf24" : "#f8fafc";
+            ctx.fillStyle = focused ? "#fbbf24" : isWorkspace ? "#c084fc" : "#f8fafc";
             ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
           }
         }}

@@ -7,12 +7,13 @@
 
 import { buildGraph } from "./graph-builder";
 import { detectRepoGuide, type RepoGuide } from "./repo-guide";
+import { detectMonorepo, type MonorepoInfo } from "./monorepo";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type GraphNode = { id: string; label: string; type: "file" | "folder" };
+export type GraphNode = { id: string; label: string; type: "file" | "folder" | "workspace" };
 export type GraphEdge = { from: string; to: string };
 
 export interface RepoGraph {
@@ -26,6 +27,7 @@ export interface AnalyzeResult {
   graph: RepoGraph;
   noSupportedFiles: boolean;
   repoGuide: RepoGuide;
+  monorepoInfo: MonorepoInfo;
 }
 
 /** Shape of a single item returned by the GitHub Git Trees API. */
@@ -233,6 +235,7 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
   // --- Build graph nodes and edges using buildGraph helper ---
   const graph = buildGraph(sourceFiles, "high-level");
   const repoGuide = detectRepoGuide(sourceFiles);
+  const monorepoInfo = detectMonorepo(tree, sourceFiles);
 
   return {
     overview: "",
@@ -240,6 +243,7 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
     graph,
     noSupportedFiles,
     repoGuide,
+    monorepoInfo,
   };
 }
 

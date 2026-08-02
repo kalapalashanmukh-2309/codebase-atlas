@@ -3,7 +3,8 @@
  *
  * Generates an AI-powered answer to user questions about a repository
  * using the Gemini API with a structured, context-aware prompt.
- * Supports flow-question classification, focusFiles extraction, and flow summaries.
+ * Supports flow-question classification, focusFiles extraction, flow summaries,
+ * and key code snippets.
  */
 
 // ---------------------------------------------------------------------------
@@ -23,12 +24,19 @@ export interface AskQuestionInput {
   snippets: Snippet[];
 }
 
+export interface QaCodeSnippet {
+  file: string;
+  lines: [number, number]; // 1-based start and end line numbers
+  code: string;
+}
+
 export interface QaResult {
   answer: string;
   referencedFiles: string[];
   focusFiles?: string[];
   summary?: string;
   isFlowQuestion?: boolean;
+  codeSnippets?: QaCodeSnippet[];
 }
 
 interface GeminiCandidate {
@@ -101,14 +109,22 @@ Answer style rules:
 {
   "summary": "2-4 sentence overview explaining how this flow works",
   "focusFiles": ["lib/parse.ts", "commands/parse.ts"],
-  "referencedFiles": ["lib/parse.ts", "commands/parse.ts"]
+  "referencedFiles": ["lib/parse.ts", "commands/parse.ts"],
+  "snippets": [
+    {
+      "file": "lib/parse.ts",
+      "lines": [10, 22],
+      "code": "export function parse(input) {\\n  return execute(input);\\n}"
+    }
+  ]
 }
 \`\`\`
 
 JSON fields:
 - "summary": A 2-4 sentence explanation of the workflow or architecture asked about.
 - "focusFiles": The 2-6 most critical file paths involved in this execution flow.
-- "referencedFiles": All file paths mentioned anywhere in your answer.`;
+- "referencedFiles": All file paths mentioned anywhere in your answer.
+- "snippets": Up to 3 key code snippets (max 12 lines each) with file path, [startLine, endLine] (1-based), and trimmed code string.`;
 
 // ---------------------------------------------------------------------------
 // Helper: Parse text answer & JSON block
@@ -116,13 +132,14 @@ JSON fields:
 
 export function parseQaResponse(rawText: string, question = ""): QaResult {
   if (!rawText) {
-    return { answer: FALLBACK_ANSWER, referencedFiles: [], isFlowQuestion: false };
+    return { answer: FALLBACK_ANSWER, referencedFiles: [], isFlowQuestion: false, codeSnippets: [] };
   }
 
   let text = rawText;
   let referencedFiles: string[] = [];
   let focusFiles: string[] = [];
   let summary: string | undefined;
+  let codeSnippets: QaCodeSnippet[] = [];
 
   const isFlow = isFlowQuestion(question);
 
@@ -149,6 +166,22 @@ export function parseQaResponse(rawText: string, question = ""): QaResult {
       if (typeof parsed.summary === "string" && parsed.summary.trim().length > 0) {
         summary = parsed.summary.trim();
       }
+
+      const rawSnippets = parsed.snippets || parsed.codeSnippets;
+      if (Array.isArray(rawSnippets)) {
+        codeSnippets = rawSnippets
+          .filter((s: unknown): s is Record<string, unknown> => typeof s === "object" && s !== null)
+          .map((s) => {
+            const file = typeof s.file === "string" ? s.file : "";
+            const lines: [number, number] =
+              Array.isArray(s.lines) && s.lines.length >= 2
+                ? [Number(s.lines[0]) || 1, Number(s.lines[1]) || 1]
+                : [1, 1];
+            const code = typeof s.code === "string" ? s.code.trim() : "";
+            return { file, lines, code };
+          })
+          .filter((s) => s.file.length > 0 && s.code.length > 0);
+      }
     } catch {
       // ignore parse failure
     }
@@ -159,18 +192,37 @@ export function parseQaResponse(rawText: string, question = ""): QaResult {
     if (fallbackMatch) {
       try {
         const parsed = JSON.parse(fallbackMatch[1]);
+
         if (Array.isArray(parsed.referencedFiles)) {
           referencedFiles = parsed.referencedFiles.filter(
             (f: unknown): f is string => typeof f === "string" && f.trim().length > 0
           );
         }
+
         if (Array.isArray(parsed.focusFiles)) {
           focusFiles = parsed.focusFiles.filter(
             (f: unknown): f is string => typeof f === "string" && f.trim().length > 0
           );
         }
+
         if (typeof parsed.summary === "string" && parsed.summary.trim().length > 0) {
           summary = parsed.summary.trim();
+        }
+
+        const rawSnippets = parsed.snippets || parsed.codeSnippets;
+        if (Array.isArray(rawSnippets)) {
+          codeSnippets = rawSnippets
+            .filter((s: unknown): s is Record<string, unknown> => typeof s === "object" && s !== null)
+            .map((s) => {
+              const file = typeof s.file === "string" ? s.file : "";
+              const lines: [number, number] =
+                Array.isArray(s.lines) && s.lines.length >= 2
+                  ? [Number(s.lines[0]) || 1, Number(s.lines[1]) || 1]
+                  : [1, 1];
+              const code = typeof s.code === "string" ? s.code.trim() : "";
+              return { file, lines, code };
+            })
+            .filter((s) => s.file.length > 0 && s.code.length > 0);
         }
       } catch {
         // ignore
@@ -179,7 +231,6 @@ export function parseQaResponse(rawText: string, question = ""): QaResult {
     }
   }
 
-  // Fallback: if focusFiles is empty, use referencedFiles
   if (focusFiles.length === 0) {
     focusFiles = [...referencedFiles];
   }
@@ -190,6 +241,7 @@ export function parseQaResponse(rawText: string, question = ""): QaResult {
     focusFiles,
     summary,
     isFlowQuestion: isFlow,
+    codeSnippets,
   };
 }
 
@@ -200,7 +252,7 @@ export function parseQaResponse(rawText: string, question = ""): QaResult {
 /**
  * Answer a user's question about a codebase based on graph context
  * and file snippets. Returns structured answer text, referenced file paths,
- * and flow focus metadata.
+ * flow focus metadata, and code snippets.
  */
 export async function answerQuestion(
   input: AskQuestionInput
@@ -213,6 +265,7 @@ export async function answerQuestion(
       referencedFiles: [],
       focusFiles: [],
       isFlowQuestion: false,
+      codeSnippets: [],
     };
   }
 
@@ -230,7 +283,7 @@ export async function answerQuestion(
           },
           contents: [{ parts: [{ text: userPrompt }] }],
           generationConfig: {
-            maxOutputTokens: 800,
+            maxOutputTokens: 1000,
             temperature: 0.2,
           },
         }),
@@ -240,21 +293,21 @@ export async function answerQuestion(
     if (!res.ok) {
       const errText = await res.text();
       console.error(`Gemini Q&A API error (${res.status}):`, errText);
-      return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false };
+      return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
     }
 
     const data = (await res.json()) as GeminiResponse;
 
     if (data.error) {
       console.error("Gemini Q&A API error:", data.error.message);
-      return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false };
+      return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
     }
 
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
     return parseQaResponse(rawText, input.question);
   } catch (err) {
     console.error("Failed to generate Q&A response:", err);
-    return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false };
+    return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
   }
 }
 

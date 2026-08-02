@@ -4,8 +4,10 @@
  * Graph builder helper for Codebase Atlas.
  * Transforms a list of TypeScript file paths into node and edge structures
  * for the interactive force graph in either "high-level" or "detailed" mode.
- * Supports building focused subgraphs for flow-specific Q&A answers.
+ * Supports monorepo workspace-level grouping and flow subgraphs.
  */
+
+import { type MonorepoInfo } from "./monorepo";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,7 +18,7 @@ export type GraphMode = "high-level" | "detailed";
 export interface GraphNode {
   id: string;
   label: string;
-  type: "file" | "folder";
+  type: "file" | "folder" | "workspace";
 }
 
 export interface GraphEdge {
@@ -175,12 +177,98 @@ export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
 
 /**
  * Builds nodes and edges for the dependency graph given a list of file paths.
+ * Supports monorepo workspace-level grouping when monorepoInfo is provided.
  *
  * @param files List of TypeScript file paths in the repo
- * @param mode  "high-level" (folder collapsing & noise reduction) or "detailed" (all files)
+ * @param mode  "high-level" (folder/workspace collapsing & noise reduction) or "detailed"
+ * @param monorepoInfo Monorepo info containing workspaces if detected
  */
-export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
-  // Determine scope prefix: "src/" if src exists in paths, otherwise ""
+export function buildGraph(
+  files: string[],
+  mode: GraphMode,
+  monorepoInfo?: MonorepoInfo
+): BuiltGraph {
+  // If repository is a monorepo, structure nodes and edges by workspace
+  if (monorepoInfo?.isMonorepo && monorepoInfo.workspaces && monorepoInfo.workspaces.length > 0) {
+    const nodeMap = new Map<string, GraphNode>();
+    const edgeSet = new Set<string>();
+    const edges: GraphEdge[] = [];
+
+    function addEdge(from: string, to: string) {
+      const key = `${from}->${to}`;
+      if (!edgeSet.has(key) && from !== to) {
+        edgeSet.add(key);
+        edges.push({ from, to });
+      }
+    }
+
+    // Create a node for each workspace
+    for (const ws of monorepoInfo.workspaces) {
+      const wsId = `workspace:${ws.path}`;
+      nodeMap.set(wsId, {
+        id: wsId,
+        label: `📦 ${ws.name}`,
+        type: "workspace",
+      });
+    }
+
+    if (mode === "high-level") {
+      // High-level: Show workspace nodes + key entry files per workspace
+      for (const ws of monorepoInfo.workspaces) {
+        const wsId = `workspace:${ws.path}`;
+        const keyFiles = ws.files.filter(
+          (f) =>
+            isImportantFile(f) ||
+            f.endsWith("/index.ts") ||
+            f.endsWith("/index.tsx") ||
+            f.endsWith("/main.ts")
+        );
+        const displayFiles = keyFiles.length > 0 ? keyFiles.slice(0, 3) : ws.files.slice(0, 2);
+
+        for (const filePath of displayFiles) {
+          const filename = filePath.split("/").pop() || filePath;
+          if (!nodeMap.has(filePath)) {
+            nodeMap.set(filePath, {
+              id: filePath,
+              label: filename,
+              type: "file",
+            });
+          }
+          addEdge(wsId, filePath);
+        }
+      }
+    } else {
+      // Detailed: Show workspace nodes + member file nodes
+      for (const ws of monorepoInfo.workspaces) {
+        const wsId = `workspace:${ws.path}`;
+        for (const filePath of ws.files) {
+          const filename = filePath.split("/").pop() || filePath;
+          if (!nodeMap.has(filePath)) {
+            nodeMap.set(filePath, {
+              id: filePath,
+              label: filename,
+              type: "file",
+            });
+          }
+          addEdge(wsId, filePath);
+        }
+      }
+    }
+
+    // Inter-workspace edges between consecutive workspaces
+    const wsIds = monorepoInfo.workspaces.map((w) => `workspace:${w.path}`);
+    for (let i = 0; i < wsIds.length - 1; i++) {
+      addEdge(wsIds[i], wsIds[i + 1]);
+    }
+
+    const nodes = Array.from(nodeMap.values());
+    console.log(
+      `[lib/graph-builder] Monorepo Mode: "${mode}" | Workspaces: ${monorepoInfo.workspaces.length} => Nodes: ${nodes.length}, Edges: ${edges.length}`
+    );
+    return { nodes, edges };
+  }
+
+  // --- Standard single-package repo graph building ---
   const hasSrc = files.some((f) => f.startsWith("src/"));
   const scopePrefix = hasSrc ? "src/" : "";
 
@@ -282,7 +370,7 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
   const nodes = Array.from(nodeMap.values());
 
   if (mode === "high-level" && nodes.length === 0 && files.length > 0) {
-    return buildGraph(files, "detailed");
+    return buildGraph(files, "detailed", monorepoInfo);
   }
 
   console.log(

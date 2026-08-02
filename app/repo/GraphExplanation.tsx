@@ -61,6 +61,18 @@ export default function GraphExplanation() {
               width: 10,
               height: 10,
               borderRadius: "50%",
+              background: "#a855f7",
+              display: "inline-block",
+            }}
+          />
+          <span style={{ color: "#cbd5e1", fontSize: "0.85rem" }}>Workspace</span>
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
               background: "#6366f1",
               display: "inline-block",
             }}
