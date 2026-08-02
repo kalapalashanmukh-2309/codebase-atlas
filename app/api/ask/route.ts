@@ -42,12 +42,12 @@ export async function POST(request: Request) {
     const tree = await fetchRepoTree(owner, repo);
     const analysis = buildAnalyzeResult(tree);
 
-    // 3. Select top relevant files based on the question
-    const targetFiles = selectRelevantFiles(analysis.files, question, 4);
+    // 3. Select top relevant files based on the question (up to 12)
+    const targetFiles = selectRelevantFiles(analysis.files, question, 12);
 
-    // 4. Concurrently fetch file content snippets
+    // 4. Concurrently fetch file content snippets (up to 3000 chars each)
     const snippetPromises = targetFiles.map(async (filePath) => {
-      const content = await fetchFileContent(owner, repo, filePath, 2000);
+      const content = await fetchFileContent(owner, repo, filePath, 3000);
       return content ? { path: filePath, content } : null;
     });
 
