@@ -90,10 +90,10 @@ function getLinkId(endpoint: string | { id: string }): string {
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
- * Sci-Fi Futuristic Theme:
- * - Deep navy space background (#030712) with subtle glow inset.
- * - Soft canvas radial glow halos on nodes (`shadowBlur`).
- * - Animated particle light beams on hover connected edges.
+ * Animations & Transitions:
+ * - Smooth 300ms fade-in and scale-up on load.
+ * - Gentle node hover scaling (1.25x) and aura brightening.
+ * - Smooth 350ms camera pan/zoom transitions when focusing nodes (no hard jumps).
  */
 export default function RepoGraph({
   nodes,
@@ -104,6 +104,7 @@ export default function RepoGraph({
   // --- Dynamic import (canvas component can't render on the server) ---
   const [FG2D, setFG2D] = useState<ForceGraph2DComponent | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+  const [mountProgress, setMountProgress] = useState(0.1);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
@@ -113,6 +114,25 @@ export default function RepoGraph({
       setFG2D(() => mod.default);
     });
   }, []);
+
+  // --- Smooth mount fade-in animation (300ms) ---
+  useEffect(() => {
+    let start: number | null = null;
+    let frameId: number;
+
+    function step(timestamp: number) {
+      if (!start) start = timestamp;
+      const elapsed = timestamp - start;
+      const progress = Math.min(1, 0.1 + (elapsed / 300) * 0.9);
+      setMountProgress(progress);
+      if (progress < 1) {
+        frameId = requestAnimationFrame(step);
+      }
+    }
+
+    frameId = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frameId);
+  }, [nodes]);
 
   // --- Build the data structure ForceGraph2D expects ---
   const graphData: GraphData = useMemo(() => {
@@ -159,19 +179,16 @@ export default function RepoGraph({
   // --- D3 Force Layout Tuning ---
   useEffect(() => {
     if (fgRef.current) {
-      // 1. Repulsion force (charge) — spread nodes apart cleanly without overlaps
       const chargeForce = fgRef.current.d3Force("charge");
       if (chargeForce) {
         chargeForce.strength(-350).distanceMax(650);
       }
 
-      // 2. Link force — comfortable spring distance
       const linkForce = fgRef.current.d3Force("link");
       if (linkForce) {
         linkForce.distance(75).strength(0.4);
       }
 
-      // 3. Centering force — keep the graph topology neatly centered in view
       const centerForce = fgRef.current.d3Force("center");
       if (centerForce) {
         centerForce.x(dimensions.width / 2).y(dimensions.height / 2);
@@ -179,9 +196,27 @@ export default function RepoGraph({
     }
   }, [FG2D, dimensions.width, dimensions.height]);
 
+  // --- Smooth Camera Transition to Focused Node ---
+  useEffect(() => {
+    if (!fgRef.current || !focusFile) return;
+
+    const lowerFocus = focusFile.toLowerCase();
+    const targetNode = graphData.nodes.find((n) => {
+      const lowerId = n.id.toLowerCase();
+      return lowerId === lowerFocus || lowerId.endsWith(lowerFocus) || lowerFocus.endsWith(lowerId);
+    });
+
+    if (targetNode && targetNode.x !== undefined && targetNode.y !== undefined) {
+      fgRef.current.centerAt(targetNode.x, targetNode.y, 350);
+      fgRef.current.zoom(2.2, 350);
+    }
+  }, [focusFile, graphData]);
+
   // --- Interaction callbacks ---
   const handleNodeClick = useCallback((node: GraphNode) => {
-    console.log("Node clicked:", node);
+    if (fgRef.current && node.x !== undefined && node.y !== undefined) {
+      fgRef.current.centerAt(node.x, node.y, 300);
+    }
   }, []);
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {
@@ -232,22 +267,25 @@ export default function RepoGraph({
         graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
-        /* ---- Custom Node Rendering with Subtle Sci-Fi Glow ---- */
+        /* ---- Custom Node Rendering with Subtle Animations ---- */
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = node.label;
           const focused = isFocusedNode(node);
           const isWorkspace = node.type === "workspace";
-          const radius = getNodeRadius(node, focused);
+          const isHovered = hoverNode && hoverNode.id === node.id;
+          const baseRadius = getNodeRadius(node, focused);
+          
+          // Gentle scale animation on hover (1.25x) & initial load mount progress
+          const radius = baseRadius * (isHovered ? 1.25 : 1) * mountProgress;
           const color = getNodeColor(node, focused);
           const fontSize = (focused ? 13 : isWorkspace ? 12 : 11) / globalScale;
-          const isHovered = hoverNode && hoverNode.id === node.id;
 
           if (node.x === undefined || node.y === undefined) return;
 
           // Fade out nodes unrelated to current hover selection
           const isNeighbor = !hoverNode || hoverNeighborSet.has(node.id);
           ctx.save();
-          ctx.globalAlpha = isNeighbor ? 1.0 : 0.2;
+          ctx.globalAlpha = (isNeighbor ? 1.0 : 0.2) * mountProgress;
 
           // Outer halo glow for focused node
           if (focused) {
