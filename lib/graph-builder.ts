@@ -202,19 +202,28 @@ export function buildGraph(
       }
     }
 
-    // Create a node for each workspace
-    for (const ws of monorepoInfo.workspaces) {
+    // In high-level mode, filter workspaces to those containing source files to avoid cluttering with empty packages
+    const activeWorkspaces = mode === "high-level"
+      ? monorepoInfo.workspaces.filter((w) => w.files.length > 0)
+      : monorepoInfo.workspaces;
+
+    const targetWorkspaces = activeWorkspaces.length > 0 ? activeWorkspaces : monorepoInfo.workspaces.slice(0, 15);
+
+    // Create a node for each active workspace
+    for (const ws of targetWorkspaces) {
       const wsId = `workspace:${ws.path}`;
+      // Clean short label: strip leading "packages/" or "apps/" prefix
+      const shortName = ws.name.replace(/^(packages|apps|modules|services|libs|projects)\//i, "");
       nodeMap.set(wsId, {
         id: wsId,
-        label: `📦 ${ws.name}`,
+        label: `📦 ${shortName}`,
         type: "workspace",
       });
     }
 
     if (mode === "high-level") {
       // High-level: Show workspace nodes + key entry files per workspace
-      for (const ws of monorepoInfo.workspaces) {
+      for (const ws of targetWorkspaces) {
         const wsId = `workspace:${ws.path}`;
         const keyFiles = ws.files.filter(
           (f) =>
@@ -223,7 +232,7 @@ export function buildGraph(
             f.endsWith("/index.tsx") ||
             f.endsWith("/main.ts")
         );
-        const displayFiles = keyFiles.length > 0 ? keyFiles.slice(0, 3) : ws.files.slice(0, 2);
+        const displayFiles = keyFiles.length > 0 ? keyFiles.slice(0, 2) : ws.files.slice(0, 1);
 
         for (const filePath of displayFiles) {
           const filename = filePath.split("/").pop() || filePath;
@@ -239,7 +248,7 @@ export function buildGraph(
       }
     } else {
       // Detailed: Show workspace nodes + member file nodes
-      for (const ws of monorepoInfo.workspaces) {
+      for (const ws of targetWorkspaces) {
         const wsId = `workspace:${ws.path}`;
         for (const filePath of ws.files) {
           const filename = filePath.split("/").pop() || filePath;
@@ -256,7 +265,7 @@ export function buildGraph(
     }
 
     // Inter-workspace edges between consecutive workspaces
-    const wsIds = monorepoInfo.workspaces.map((w) => `workspace:${w.path}`);
+    const wsIds = targetWorkspaces.map((w) => `workspace:${w.path}`);
     for (let i = 0; i < wsIds.length - 1; i++) {
       addEdge(wsIds[i], wsIds[i + 1]);
     }

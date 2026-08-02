@@ -180,8 +180,8 @@ export default function RepoGraph({
           ctx.lineWidth = (focused ? 2 : 0.5) / globalScale;
           ctx.stroke();
 
-          // Label rendering (always for focused / workspace node or when zoomed in)
-          if (focused || isWorkspace || globalScale > 1.8) {
+          // Label rendering (focused nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
+          if (focused || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
             ctx.font = `${focused || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
@@ -190,13 +190,17 @@ export default function RepoGraph({
           }
         }}
         nodeLabel={(node: GraphNode) => node.label}
+        nodeRelSize={6}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.3}
+        warmupTicks={100}
+        cooldownTicks={120}
         /* ---- Link appearance ---- */
         linkColor={() => "rgba(148,163,184,0.35)"}
         linkDirectionalArrowLength={3}
         linkDirectionalArrowRelPos={1}
         /* ---- Interaction ---- */
         onNodeClick={handleNodeClick}
-        cooldownTicks={80}
       />
     </div>
   );
