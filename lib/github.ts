@@ -13,7 +13,7 @@ import { detectMonorepo, type MonorepoInfo } from "./monorepo";
 // Types
 // ---------------------------------------------------------------------------
 
-export type GraphNode = { id: string; label: string; type: "file" | "folder" | "workspace" };
+export type GraphNode = { id: string; label: string; type: "file" | "folder" | "workspace"; isImportant?: boolean; isLowValue?: boolean };
 export type GraphEdge = { from: string; to: string };
 
 export interface RepoGraph {

@@ -19,6 +19,8 @@ export interface GraphNode {
   id: string;
   label: string;
   type: "file" | "folder" | "workspace";
+  isImportant?: boolean;
+  isLowValue?: boolean;
 }
 
 export interface GraphEdge {
@@ -212,7 +214,6 @@ export function buildGraph(
     // Create a node for each active workspace
     for (const ws of targetWorkspaces) {
       const wsId = `workspace:${ws.path}`;
-      // Clean short label: strip leading "packages/" or "apps/" prefix
       const shortName = ws.name.replace(/^(packages|apps|modules|services|libs|projects)\//i, "");
       nodeMap.set(wsId, {
         id: wsId,
@@ -241,6 +242,8 @@ export function buildGraph(
               id: filePath,
               label: filename,
               type: "file",
+              isImportant: isImportantFile(filePath),
+              isLowValue: isLowValueFile(filePath),
             });
           }
           addEdge(wsId, filePath);
@@ -257,6 +260,8 @@ export function buildGraph(
               id: filePath,
               label: filename,
               type: "file",
+              isImportant: isImportantFile(filePath),
+              isLowValue: isLowValueFile(filePath),
             });
           }
           addEdge(wsId, filePath);
@@ -321,6 +326,8 @@ export function buildGraph(
               id: filePath,
               label: filename,
               type: "file",
+              isImportant: true,
+              isLowValue: false,
             });
           }
           addEdge(folderId, filePath);
@@ -331,6 +338,8 @@ export function buildGraph(
             id: filePath,
             label: filename,
             type: "file",
+            isImportant: isImportantFile(filePath, scopePrefix),
+            isLowValue: false,
           });
         }
       }
@@ -360,6 +369,8 @@ export function buildGraph(
             id: filePath,
             label: filename,
             type: "file",
+            isImportant: isImportantFile(filePath, scopePrefix),
+            isLowValue: isLowValueFile(filePath, scopePrefix),
           });
         }
 
@@ -370,6 +381,8 @@ export function buildGraph(
             id: filePath,
             label: filename,
             type: "file",
+            isImportant: isImportantFile(filePath, scopePrefix),
+            isLowValue: isLowValueFile(filePath, scopePrefix),
           });
         }
       }
@@ -453,6 +466,8 @@ export function buildFocusSubgraph(
           id: filePath,
           label: filename,
           type: "file",
+          isImportant: isImportantFile(filePath, scopePrefix),
+          isLowValue: false,
         });
       }
 
@@ -463,6 +478,8 @@ export function buildFocusSubgraph(
           id: filePath,
           label: filename,
           type: "file",
+          isImportant: isImportantFile(filePath, scopePrefix),
+          isLowValue: false,
         });
       }
     }

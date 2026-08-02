@@ -7,7 +7,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 // ---------------------------------------------------------------------------
 
 interface RepoGraphProps {
-  nodes: { id: string; label: string; type: "file" | "folder" | "workspace" }[];
+  nodes: {
+    id: string;
+    label: string;
+    type: "file" | "folder" | "workspace";
+    isImportant?: boolean;
+    isLowValue?: boolean;
+  }[];
   edges: { from: string; to: string }[];
   focusFile?: string | null;
   highlightedFiles?: string[];
@@ -21,6 +27,8 @@ interface GraphNode {
   id: string;
   label: string;
   type: "file" | "folder" | "workspace";
+  isImportant?: boolean;
+  isLowValue?: boolean;
   x?: number;
   y?: number;
 }
@@ -39,13 +47,35 @@ interface GraphData {
 type ForceGraph2DComponent = React.ComponentType<any>;
 
 // ---------------------------------------------------------------------------
-// Constants
+// Color Palette (Consistent, Clean Visual System)
 // ---------------------------------------------------------------------------
 
-const FOLDER_COLOR = "#6366f1"; // indigo-500
-const WORKSPACE_COLOR = "#a855f7"; // purple-500
-const FILE_COLOR = "#22d3ee"; // cyan-400
-const FOCUS_COLOR = "#fbbf24"; // amber-400
+const COLOR_DEFAULT_FILE = "#38bdf8"; // Primary cyan-blue for standard source files
+const COLOR_IMPORTANT_FILE = "#34d399"; // Bright emerald teal accent for entry points (index, main, cli)
+const COLOR_LOW_VALUE_FILE = "#64748b"; // Muted slate gray for utility / low-value files
+const COLOR_FOLDER = "#6366f1"; // Muted indigo for folder containers
+const COLOR_WORKSPACE = "#a855f7"; // Soft purple for monorepo workspace packages
+const COLOR_FOCUS = "#fbbf24"; // Vibrant gold for Q&A focused files
+
+// Helper: Calculate node radius based on visual hierarchy
+function getNodeRadius(node: GraphNode, focused: boolean): number {
+  if (focused) return 9;
+  if (node.type === "workspace") return 8;
+  if (node.isImportant) return 7;
+  if (node.type === "folder") return 6;
+  if (node.isLowValue) return 4;
+  return 5.5;
+}
+
+// Helper: Calculate node color based on type and importance
+function getNodeColor(node: GraphNode, focused: boolean): string {
+  if (focused) return COLOR_FOCUS;
+  if (node.type === "workspace") return COLOR_WORKSPACE;
+  if (node.type === "folder") return COLOR_FOLDER;
+  if (node.isImportant) return COLOR_IMPORTANT_FILE;
+  if (node.isLowValue) return COLOR_LOW_VALUE_FILE;
+  return COLOR_DEFAULT_FILE;
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -55,10 +85,11 @@ const FOCUS_COLOR = "#fbbf24"; // amber-400
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
- * - Workspace nodes are purple circles with package labels.
- * - Folder nodes are indigo circles.
- * - File nodes are cyan circles.
- * - Focused & highlighted files glow in gold with bold labels.
+ * - Standard files are primary cyan/blue.
+ * - Key entry files (index, main, cli, app) are bright emerald teal and slightly larger.
+ * - Low-value / utility modules are muted slate gray.
+ * - Hovering displays the full relative path in a tooltip.
+ * - Labels show only the short filename to prevent visual clutter.
  */
 export default function RepoGraph({
   nodes,
@@ -148,18 +179,12 @@ export default function RepoGraph({
         height={dimensions.height}
         /* ---- Custom Node Rendering ---- */
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          const label = node.label;
+          const label = node.label; // Short filename only!
           const focused = isFocusedNode(node);
           const isWorkspace = node.type === "workspace";
+          const radius = getNodeRadius(node, focused);
+          const color = getNodeColor(node, focused);
           const fontSize = (focused ? 13 : isWorkspace ? 12 : 11) / globalScale;
-          const radius = focused ? 9 : isWorkspace ? 7 : node.type === "folder" ? 6 : 4;
-          const color = focused
-            ? FOCUS_COLOR
-            : isWorkspace
-            ? WORKSPACE_COLOR
-            : node.type === "folder"
-            ? FOLDER_COLOR
-            : FILE_COLOR;
 
           if (node.x === undefined || node.y === undefined) return;
 
@@ -182,14 +207,26 @@ export default function RepoGraph({
 
           // Label rendering (focused nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
           if (focused || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
-            ctx.font = `${focused || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
+            ctx.font = `${focused || node.isImportant || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = focused ? "#fbbf24" : isWorkspace ? "#c084fc" : "#f8fafc";
+            ctx.fillStyle = focused
+              ? "#fbbf24"
+              : isWorkspace
+              ? "#c084fc"
+              : node.isImportant
+              ? "#6ee7b7"
+              : "#f8fafc";
             ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
           }
         }}
-        nodeLabel={(node: GraphNode) => node.label}
+        /* Tooltip displays full relative file path on hover */
+        nodeLabel={(node: GraphNode) => {
+          if (node.type === "workspace") return `Workspace: ${node.id.replace(/^workspace:/, "")}`;
+          if (node.type === "folder") return `Folder: ${node.id}`;
+          if (node.isImportant) return `⭐ Key Entry File: ${node.id}`;
+          return node.id;
+        }}
         nodeRelSize={6}
         d3AlphaDecay={0.02}
         d3VelocityDecay={0.3}
