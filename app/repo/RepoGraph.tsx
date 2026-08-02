@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -34,8 +34,8 @@ interface GraphNode {
 }
 
 interface GraphLink {
-  source: string;
-  target: string;
+  source: string | { id: string };
+  target: string | { id: string };
 }
 
 interface GraphData {
@@ -77,6 +77,11 @@ function getNodeColor(node: GraphNode, focused: boolean): string {
   return COLOR_DEFAULT_FILE;
 }
 
+// Helper: Safely extract string ID from link endpoint
+function getLinkId(endpoint: string | { id: string }): string {
+  return typeof endpoint === "object" && endpoint !== null ? endpoint.id : endpoint;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -85,11 +90,10 @@ function getNodeColor(node: GraphNode, focused: boolean): string {
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
- * - Standard files are primary cyan/blue.
- * - Key entry files (index, main, cli, app) are bright emerald teal and slightly larger.
- * - Low-value / utility modules are muted slate gray.
- * - Hovering displays the full relative path in a tooltip.
- * - Labels show only the short filename to prevent visual clutter.
+ * Edge & Hover Features:
+ * - Thin, semi-transparent default edges with subtle arrowheads.
+ * - Interactive node hover: connected edges brighten in cyan, connected neighbors
+ *   remain bright, and unrelated nodes/edges fade out smoothly.
  */
 export default function RepoGraph({
   nodes,
@@ -99,6 +103,7 @@ export default function RepoGraph({
 }: RepoGraphProps) {
   // --- Dynamic import (canvas component can't render on the server) ---
   const [FG2D, setFG2D] = useState<ForceGraph2DComponent | null>(null);
+  const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
 
   useEffect(() => {
     import("react-force-graph-2d").then((mod) => {
@@ -107,10 +112,28 @@ export default function RepoGraph({
   }, []);
 
   // --- Build the data structure ForceGraph2D expects ---
-  const graphData: GraphData = {
-    nodes: nodes.map((n) => ({ ...n })),
-    links: edges.map((e) => ({ source: e.from, target: e.to })),
-  };
+  const graphData: GraphData = useMemo(() => {
+    return {
+      nodes: nodes.map((n) => ({ ...n })),
+      links: edges.map((e) => ({ source: e.from, target: e.to })),
+    };
+  }, [nodes, edges]);
+
+  // --- Hover Neighbors Map ---
+  const hoverNeighborSet = useMemo(() => {
+    const set = new Set<string>();
+    if (!hoverNode) return set;
+
+    set.add(hoverNode.id);
+    for (const link of graphData.links) {
+      const sId = getLinkId(link.source);
+      const tId = getLinkId(link.target);
+
+      if (sId === hoverNode.id) set.add(tId);
+      if (tId === hoverNode.id) set.add(sId);
+    }
+    return set;
+  }, [hoverNode, graphData]);
 
   // --- Resize handling ---
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,6 +156,10 @@ export default function RepoGraph({
   // --- Interaction callbacks ---
   const handleNodeClick = useCallback((node: GraphNode) => {
     console.log("Node clicked:", node);
+  }, []);
+
+  const handleNodeHover = useCallback((node: GraphNode | null) => {
+    setHoverNode(node);
   }, []);
 
   // --- Focus & Highlight check helper ---
@@ -177,9 +204,9 @@ export default function RepoGraph({
         graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
-        /* ---- Custom Node Rendering ---- */
+        /* ---- Custom Node Rendering with Fading ---- */
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          const label = node.label; // Short filename only!
+          const label = node.label;
           const focused = isFocusedNode(node);
           const isWorkspace = node.type === "workspace";
           const radius = getNodeRadius(node, focused);
@@ -188,11 +215,24 @@ export default function RepoGraph({
 
           if (node.x === undefined || node.y === undefined) return;
 
+          // Fade out nodes unrelated to current hover selection
+          const isNeighbor = !hoverNode || hoverNeighborSet.has(node.id);
+          ctx.save();
+          ctx.globalAlpha = isNeighbor ? 1.0 : 0.25;
+
           // Outer halo for focused node
           if (focused) {
             ctx.beginPath();
             ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
             ctx.fillStyle = "rgba(251, 191, 36, 0.35)";
+            ctx.fill();
+          }
+
+          // Outer ring for hovered node
+          if (hoverNode && hoverNode.id === node.id) {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius + 4, 0, 2 * Math.PI, false);
+            ctx.fillStyle = "rgba(56, 189, 248, 0.35)";
             ctx.fill();
           }
 
@@ -205,8 +245,8 @@ export default function RepoGraph({
           ctx.lineWidth = (focused ? 2 : 0.5) / globalScale;
           ctx.stroke();
 
-          // Label rendering (focused nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
-          if (focused || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
+          // Label rendering (focused nodes, hovered nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
+          if (focused || (hoverNode && hoverNode.id === node.id) || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
             ctx.font = `${focused || node.isImportant || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
@@ -219,6 +259,8 @@ export default function RepoGraph({
               : "#f8fafc";
             ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
           }
+
+          ctx.restore();
         }}
         /* Tooltip displays full relative file path on hover */
         nodeLabel={(node: GraphNode) => {
@@ -232,12 +274,34 @@ export default function RepoGraph({
         d3VelocityDecay={0.3}
         warmupTicks={100}
         cooldownTicks={120}
-        /* ---- Link appearance ---- */
-        linkColor={() => "rgba(148,163,184,0.35)"}
-        linkDirectionalArrowLength={3}
+        /* ---- Dynamic Link Appearance ---- */
+        linkColor={(link: GraphLink) => {
+          if (!hoverNode) return "rgba(148, 163, 184, 0.22)"; // Thin, subtle line by default
+
+          const sId = getLinkId(link.source);
+          const tId = getLinkId(link.target);
+          const isConnected = sId === hoverNode.id || tId === hoverNode.id;
+
+          return isConnected
+            ? "rgba(56, 189, 248, 0.95)" // Bright cyan highlight for connected edges!
+            : "rgba(148, 163, 184, 0.05)"; // Faded out for unrelated edges
+        }}
+        linkWidth={(link: GraphLink) => {
+          if (!hoverNode) return 1;
+          const sId = getLinkId(link.source);
+          const tId = getLinkId(link.target);
+          return sId === hoverNode.id || tId === hoverNode.id ? 2.5 : 0.5;
+        }}
+        linkDirectionalArrowLength={(link: GraphLink) => {
+          if (!hoverNode) return 3.5;
+          const sId = getLinkId(link.source);
+          const tId = getLinkId(link.target);
+          return sId === hoverNode.id || tId === hoverNode.id ? 5 : 1.5;
+        }}
         linkDirectionalArrowRelPos={1}
         /* ---- Interaction ---- */
         onNodeClick={handleNodeClick}
+        onNodeHover={handleNodeHover}
       />
     </div>
   );
