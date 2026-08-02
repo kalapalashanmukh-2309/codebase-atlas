@@ -6,6 +6,7 @@ import RepoGraph from "./RepoGraph";
 import InfoPanel from "./InfoPanel";
 import GraphExplanation from "./GraphExplanation";
 import CopyLinkButton from "./CopyLinkButton";
+import { buildGraph, type GraphMode } from "@/lib/graph-builder";
 
 // ---------------------------------------------------------------------------
 // Types matching the /api/analyze response
@@ -75,6 +76,12 @@ function RepoPageInner() {
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
+
+  // --- Graph Mode state ("high-level" | "detailed") ---
+  const [graphMode, setGraphMode] = useState<GraphMode>("high-level");
+
+  // Rebuild graph dynamically based on active graphMode and file list
+  const activeGraph = data ? buildGraph(data.files, graphMode) : null;
 
   // --- Fetch repository analysis on mount ---
   useEffect(() => {
@@ -307,14 +314,14 @@ function RepoPageInner() {
       )}
 
       {/* 4. Analyze Success View */}
-      {data && (
+      {data && activeGraph && (
         <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           {/* Metadata info cards */}
           <InfoPanel
             repoUrl={repoUrl}
             filesCount={data.files.length}
-            nodesCount={data.graph.nodes.length}
-            edgesCount={data.graph.edges.length}
+            nodesCount={activeGraph.nodes.length}
+            edgesCount={activeGraph.edges.length}
           />
 
           {/* AI Overview card */}
@@ -358,16 +365,69 @@ function RepoPageInner() {
 
           {/* Interactive Force Graph */}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <h2
+            <div
               style={{
-                fontSize: "1.25rem",
-                fontWeight: 600,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.75rem",
               }}
             >
-              Dependency Graph
-            </h2>
+              <h2
+                style={{
+                  fontSize: "1.25rem",
+                  fontWeight: 600,
+                }}
+              >
+                Dependency Graph
+              </h2>
+
+              {/* Mode Toggle */}
+              <div
+                style={{
+                  display: "flex",
+                  background: "#1e293b",
+                  padding: "0.25rem",
+                  borderRadius: "6px",
+                  border: "1px solid #334155",
+                }}
+              >
+                <button
+                  onClick={() => setGraphMode("high-level")}
+                  style={{
+                    padding: "0.35rem 0.85rem",
+                    borderRadius: "4px",
+                    border: "none",
+                    background: graphMode === "high-level" ? "#2563eb" : "transparent",
+                    color: graphMode === "high-level" ? "#ffffff" : "#94a3b8",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  High-level
+                </button>
+                <button
+                  onClick={() => setGraphMode("detailed")}
+                  style={{
+                    padding: "0.35rem 0.85rem",
+                    borderRadius: "4px",
+                    border: "none",
+                    background: graphMode === "detailed" ? "#2563eb" : "transparent",
+                    color: graphMode === "detailed" ? "#ffffff" : "#94a3b8",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Detailed
+                </button>
+              </div>
+            </div>
+
             <GraphExplanation />
-            <RepoGraph nodes={data.graph.nodes} edges={data.graph.edges} />
+            <RepoGraph nodes={activeGraph.nodes} edges={activeGraph.edges} />
           </div>
         </section>
       )}

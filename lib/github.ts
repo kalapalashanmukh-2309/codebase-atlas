@@ -5,6 +5,8 @@
  * a basic dependency graph from a repository's file tree.
  */
 
+import { buildGraph } from "./graph-builder";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -212,60 +214,13 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
     .slice(0, MAX_TS_FILES)
     .map((item) => item.path);
 
-  // --- Build graph nodes and edges ---
-  const nodeMap = new Map<string, GraphNode>();
-  const edges: GraphEdge[] = [];
-
-  for (const filePath of tsFiles) {
-    // Strip the scope prefix for display labels
-    const relative = scopePrefix ? filePath.slice(scopePrefix.length) : filePath;
-
-    // Determine the immediate parent folder (one level deep within scope)
-    const segments = relative.split("/");
-
-    if (segments.length > 1) {
-      // File lives inside a subfolder — ensure a folder node exists
-      const folderName = segments[0];
-      const folderId = scopePrefix + folderName;
-
-      if (!nodeMap.has(folderId)) {
-        nodeMap.set(folderId, {
-          id: folderId,
-          label: folderName,
-          type: "folder",
-        });
-      }
-
-      // Add file node
-      if (!nodeMap.has(filePath)) {
-        nodeMap.set(filePath, {
-          id: filePath,
-          label: segments[segments.length - 1],
-          type: "file",
-        });
-      }
-
-      // Edge from folder → file
-      edges.push({ from: folderId, to: filePath });
-    } else {
-      // File at the scope root level (no subfolder)
-      if (!nodeMap.has(filePath)) {
-        nodeMap.set(filePath, {
-          id: filePath,
-          label: segments[0],
-          type: "file",
-        });
-      }
-    }
-  }
+  // --- Build graph nodes and edges using buildGraph helper ---
+  const graph = buildGraph(tsFiles, "high-level");
 
   return {
     overview: "Temporary placeholder overview. Real AI overview will come later.",
     files: tsFiles,
-    graph: {
-      nodes: Array.from(nodeMap.values()),
-      edges,
-    },
+    graph,
   };
 }
 
