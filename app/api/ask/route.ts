@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       .map((n) => n.label);
 
     // 6. Generate AI answer
-    const answer = await answerQuestion({
+    const result = await answerQuestion({
       repoUrl,
       question: question.trim(),
       folders,
@@ -70,7 +70,13 @@ export async function POST(request: Request) {
       snippets,
     });
 
-    return Response.json({ answer });
+    return Response.json({
+      answer: result.answer,
+      referencedFiles: result.referencedFiles,
+      focusFiles: result.focusFiles,
+      summary: result.summary,
+      isFlowQuestion: result.isFlowQuestion,
+    });
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : "An unexpected error occurred.";

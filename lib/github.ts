@@ -6,6 +6,7 @@
  */
 
 import { buildGraph } from "./graph-builder";
+import { detectRepoGuide, type RepoGuide } from "./repo-guide";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +25,7 @@ export interface AnalyzeResult {
   files: string[];
   graph: RepoGraph;
   noSupportedFiles: boolean;
+  repoGuide: RepoGuide;
 }
 
 /** Shape of a single item returned by the GitHub Git Trees API. */
@@ -230,14 +232,14 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
 
   // --- Build graph nodes and edges using buildGraph helper ---
   const graph = buildGraph(sourceFiles, "high-level");
+  const repoGuide = detectRepoGuide(sourceFiles);
 
   return {
-    overview: noSupportedFiles
-      ? "This repository does not contain any supported TypeScript or JavaScript source files."
-      : "Temporary placeholder overview. Real AI overview will come later.",
+    overview: "",
     files: sourceFiles,
     graph,
     noSupportedFiles,
+    repoGuide,
   };
 }
 

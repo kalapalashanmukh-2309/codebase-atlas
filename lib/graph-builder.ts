@@ -4,6 +4,7 @@
  * Graph builder helper for Codebase Atlas.
  * Transforms a list of TypeScript file paths into node and edge structures
  * for the interactive force graph in either "high-level" or "detailed" mode.
+ * Supports building focused subgraphs for flow-specific Q&A answers.
  */
 
 // ---------------------------------------------------------------------------
@@ -196,12 +197,6 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
   }
 
   if (mode === "high-level") {
-    // -----------------------------------------------------------------------
-    // HIGH-LEVEL MODE:
-    // 1. Filter out low-value files (tests, .d.ts, deep utils).
-    // 2. Collapse non-important files under the same top-level folder into a folder node.
-    // 3. Keep important files (index, main, app, cli, etc.) as standalone file nodes.
-    // -----------------------------------------------------------------------
     const filtered = files.filter((f) => !isLowValueFile(f, scopePrefix));
 
     for (const filePath of filtered) {
@@ -213,10 +208,8 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
       const filename = relative.split("/").pop() || "";
 
       if (topFolder !== null) {
-        // File lives inside a folder
         const folderId = scopePrefix + topFolder;
 
-        // Create folder node for the top-level directory
         if (!nodeMap.has(folderId)) {
           nodeMap.set(folderId, {
             id: folderId,
@@ -225,7 +218,6 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
           });
         }
 
-        // If file is important, render it as a standalone file node linked to the folder
         if (isImportantFile(filePath, scopePrefix)) {
           if (!nodeMap.has(filePath)) {
             nodeMap.set(filePath, {
@@ -236,9 +228,7 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
           }
           addEdge(folderId, filePath);
         }
-        // Non-important files are collapsed into the folder node (no file node added)
       } else {
-        // Root-level file
         if (!nodeMap.has(filePath)) {
           nodeMap.set(filePath, {
             id: filePath,
@@ -249,10 +239,6 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
       }
     }
   } else {
-    // -----------------------------------------------------------------------
-    // DETAILED MODE:
-    // Render all files as individual file nodes and link them to their folders.
-    // -----------------------------------------------------------------------
     for (const filePath of files) {
       const topFolder = getTopLevelFolder(filePath, scopePrefix);
       const relative =
@@ -295,15 +281,105 @@ export function buildGraph(files: string[], mode: GraphMode): BuiltGraph {
 
   const nodes = Array.from(nodeMap.values());
 
-  // Fallback: If high-level mode filtered out all files, fall back to detailed mode
   if (mode === "high-level" && nodes.length === 0 && files.length > 0) {
     return buildGraph(files, "detailed");
   }
 
-  // Debug log node and edge counts
   console.log(
     `[lib/graph-builder] Mode: "${mode}" | Total input files: ${files.length} => Nodes: ${nodes.length}, Edges: ${edges.length}`
   );
 
+  return { nodes, edges };
+}
+
+// ---------------------------------------------------------------------------
+// Focused Subgraph Builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a small, isolated subgraph containing only the specified focus files
+ * and their parent folders / connecting edges.
+ */
+export function buildFocusSubgraph(
+  allFiles: string[],
+  focusFiles: string[]
+): BuiltGraph {
+  if (!focusFiles || focusFiles.length === 0) {
+    return { nodes: [], edges: [] };
+  }
+
+  const hasSrc = allFiles.some((f) => f.startsWith("src/"));
+  const scopePrefix = hasSrc ? "src/" : "";
+
+  const nodeMap = new Map<string, GraphNode>();
+  const edgeSet = new Set<string>();
+  const edges: GraphEdge[] = [];
+
+  function addEdge(from: string, to: string) {
+    const key = `${from}->${to}`;
+    if (!edgeSet.has(key) && from !== to) {
+      edgeSet.add(key);
+      edges.push({ from, to });
+    }
+  }
+
+  const matchedFocusFiles = allFiles.filter((filePath) => {
+    const lowerPath = filePath.toLowerCase();
+    return focusFiles.some((ff) => {
+      const lowerFf = ff.toLowerCase();
+      return lowerPath === lowerFf || lowerPath.endsWith(lowerFf) || lowerFf.endsWith(lowerPath);
+    });
+  });
+
+  const targetFileList = matchedFocusFiles.length > 0 ? matchedFocusFiles : focusFiles;
+
+  for (const filePath of targetFileList) {
+    const topFolder = getTopLevelFolder(filePath, scopePrefix);
+    const relative =
+      scopePrefix && filePath.startsWith(scopePrefix)
+        ? filePath.slice(scopePrefix.length)
+        : filePath;
+    const filename = relative.split("/").pop() || filePath;
+
+    if (topFolder !== null) {
+      const folderId = scopePrefix + topFolder;
+      if (!nodeMap.has(folderId)) {
+        nodeMap.set(folderId, {
+          id: folderId,
+          label: topFolder,
+          type: "folder",
+        });
+      }
+
+      if (!nodeMap.has(filePath)) {
+        nodeMap.set(filePath, {
+          id: filePath,
+          label: filename,
+          type: "file",
+        });
+      }
+
+      addEdge(folderId, filePath);
+    } else {
+      if (!nodeMap.has(filePath)) {
+        nodeMap.set(filePath, {
+          id: filePath,
+          label: filename,
+          type: "file",
+        });
+      }
+    }
+  }
+
+  // Interconnect focus file nodes sequentially to indicate flow
+  const fileNodeIds = Array.from(nodeMap.values())
+    .filter((n) => n.type === "file")
+    .map((n) => n.id);
+
+  for (let i = 0; i < fileNodeIds.length - 1; i++) {
+    addEdge(fileNodeIds[i], fileNodeIds[i + 1]);
+  }
+
+  const nodes = Array.from(nodeMap.values());
   return { nodes, edges };
 }

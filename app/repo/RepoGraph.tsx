@@ -9,13 +9,12 @@ import { useEffect, useRef, useState, useCallback } from "react";
 interface RepoGraphProps {
   nodes: { id: string; label: string; type: "file" | "folder" }[];
   edges: { from: string; to: string }[];
+  focusFile?: string | null;
+  highlightedFiles?: string[];
 }
 
 // ---------------------------------------------------------------------------
 // Types for react-force-graph (ForceGraph2D)
-//
-// react-force-graph doesn't ship its own TS types. We declare the minimal
-// shapes we need rather than pulling in DefinitelyTyped.
 // ---------------------------------------------------------------------------
 
 interface GraphNode {
@@ -36,8 +35,6 @@ interface GraphData {
   links: GraphLink[];
 }
 
-// We dynamically import ForceGraph2D below to avoid SSR issues (it uses
-// canvas / requestAnimationFrame). We type the component loosely here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ForceGraph2DComponent = React.ComponentType<any>;
 
@@ -47,6 +44,7 @@ type ForceGraph2DComponent = React.ComponentType<any>;
 
 const FOLDER_COLOR = "#6366f1"; // indigo-500
 const FILE_COLOR = "#22d3ee"; // cyan-400
+const FOCUS_COLOR = "#fbbf24"; // amber-400
 
 // ---------------------------------------------------------------------------
 // Component
@@ -58,16 +56,20 @@ const FILE_COLOR = "#22d3ee"; // cyan-400
  *
  * - Folder nodes are indigo circles.
  * - File nodes are cyan circles.
+ * - Focused & highlighted files glow in gold with bold labels.
  * - Hovering a node shows its label.
- * - Clicking a node logs its info to the console.
+ * - Clicking a node logs its info to console.
  */
-export default function RepoGraph({ nodes, edges }: RepoGraphProps) {
+export default function RepoGraph({
+  nodes,
+  edges,
+  focusFile,
+  highlightedFiles,
+}: RepoGraphProps) {
   // --- Dynamic import (canvas component can't render on the server) ---
   const [FG2D, setFG2D] = useState<ForceGraph2DComponent | null>(null);
 
   useEffect(() => {
-    // Import the 2D-only package directly to avoid pulling in AFRAME/three.js
-    // dependencies that the umbrella `react-force-graph` package includes.
     import("react-force-graph-2d").then((mod) => {
       setFG2D(() => mod.default);
     });
@@ -79,7 +81,7 @@ export default function RepoGraph({ nodes, edges }: RepoGraphProps) {
     links: edges.map((e) => ({ source: e.from, target: e.to })),
   };
 
-  // --- Resize handling: fill the container width ---
+  // --- Resize handling ---
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
 
@@ -102,6 +104,28 @@ export default function RepoGraph({ nodes, edges }: RepoGraphProps) {
     console.log("Node clicked:", node);
   }, []);
 
+  // --- Focus & Highlight check helper ---
+  const isFocusedNode = useCallback(
+    (node: GraphNode) => {
+      const id = node.id.toLowerCase();
+
+      if (focusFile) {
+        const f = focusFile.toLowerCase();
+        if (id === f || id.endsWith(f) || f.endsWith(id)) return true;
+      }
+
+      if (highlightedFiles && highlightedFiles.length > 0) {
+        return highlightedFiles.some((hf) => {
+          const lowerHf = hf.toLowerCase();
+          return id === lowerHf || id.endsWith(lowerHf) || lowerHf.endsWith(id);
+        });
+      }
+
+      return false;
+    },
+    [focusFile, highlightedFiles]
+  );
+
   // --- Render ---
   if (!FG2D) {
     return <p style={{ color: "#888" }}>Loading graph…</p>;
@@ -112,7 +136,7 @@ export default function RepoGraph({ nodes, edges }: RepoGraphProps) {
       ref={containerRef}
       style={{
         width: "100%",
-        border: "1px solid #e5e7eb",
+        border: "1px solid #334155",
         borderRadius: "8px",
         overflow: "hidden",
         background: "#0f172a", // slate-900 dark background
@@ -122,19 +146,49 @@ export default function RepoGraph({ nodes, edges }: RepoGraphProps) {
         graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
-        /* ---- Node appearance ---- */
+        /* ---- Custom Node Rendering ---- */
+        nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          const label = node.label;
+          const focused = isFocusedNode(node);
+          const fontSize = (focused ? 13 : 11) / globalScale;
+          const radius = focused ? 8 : node.type === "folder" ? 6 : 4;
+          const color = focused ? FOCUS_COLOR : node.type === "folder" ? FOLDER_COLOR : FILE_COLOR;
+
+          if (node.x === undefined || node.y === undefined) return;
+
+          // Outer halo for focused node
+          if (focused) {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
+            ctx.fillStyle = "rgba(251, 191, 36, 0.35)";
+            ctx.fill();
+          }
+
+          // Node circle
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.strokeStyle = focused ? "#ffffff" : "rgba(255, 255, 255, 0.25)";
+          ctx.lineWidth = (focused ? 2 : 0.5) / globalScale;
+          ctx.stroke();
+
+          // Label rendering (always for focused node or when zoomed in)
+          if (focused || globalScale > 1.8) {
+            ctx.font = `${focused ? "bold " : ""}${fontSize}px Sans-Serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = focused ? "#fbbf24" : "#f8fafc";
+            ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
+          }
+        }}
         nodeLabel={(node: GraphNode) => node.label}
-        nodeColor={(node: GraphNode) =>
-          node.type === "folder" ? FOLDER_COLOR : FILE_COLOR
-        }
-        nodeRelSize={5}
         /* ---- Link appearance ---- */
-        linkColor={() => "rgba(148,163,184,0.35)"} // subtle slate lines
+        linkColor={() => "rgba(148,163,184,0.35)"}
         linkDirectionalArrowLength={3}
         linkDirectionalArrowRelPos={1}
         /* ---- Interaction ---- */
         onNodeClick={handleNodeClick}
-        /* ---- Performance: stop simulation after settling ---- */
         cooldownTicks={80}
       />
     </div>

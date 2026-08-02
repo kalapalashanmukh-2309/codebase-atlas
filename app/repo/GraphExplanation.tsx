@@ -79,6 +79,18 @@ export default function GraphExplanation() {
           />
           <span style={{ color: "#cbd5e1", fontSize: "0.85rem" }}>File</span>
         </span>
+        <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <span
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              background: "#fbbf24",
+              display: "inline-block",
+            }}
+          />
+          <span style={{ color: "#cbd5e1", fontSize: "0.85rem" }}>Focused File</span>
+        </span>
       </div>
     </div>
   );

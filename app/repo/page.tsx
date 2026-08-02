@@ -1,13 +1,13 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import RepoGraph from "./RepoGraph";
 import InfoPanel from "./InfoPanel";
 import GraphExplanation from "./GraphExplanation";
 import CopyLinkButton from "./CopyLinkButton";
-import { buildGraph, type GraphMode } from "@/lib/graph-builder";
+import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import {
   getRecentAnalyses,
   addRecentAnalysis,
@@ -35,6 +35,11 @@ interface AnalyzeResponse {
   files: string[];
   graph: { nodes: GraphNode[]; edges: GraphEdge[] };
   noSupportedFiles?: boolean;
+  repoGuide?: {
+    type: "cli" | "react-app" | "express-api" | "other";
+    label: string;
+    recommendedQuestions: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -70,9 +75,18 @@ export default function RepoPage() {
 function RepoPageInner() {
   const searchParams = useSearchParams();
   const rawUrl = searchParams.get("url");
+  const rawFocusFile = searchParams.get("focusFile");
+  const rawFocusFiles = searchParams.get("focusFiles");
 
-  // Decode the URL (encodeURIComponent was used when navigating here)
+  // Decode search parameters
   const repoUrl = rawUrl ? decodeURIComponent(rawUrl) : null;
+  const focusFile = rawFocusFile ? decodeURIComponent(rawFocusFile) : null;
+  const urlFocusFiles = rawFocusFiles
+    ? rawFocusFiles
+        .split(",")
+        .map((f) => decodeURIComponent(f.trim()))
+        .filter((f) => f.length > 0)
+    : [];
 
   // --- Analyze state ---
   const [loading, setLoading] = useState(true);
@@ -83,13 +97,55 @@ function RepoPageInner() {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
+  const [referencedFiles, setReferencedFiles] = useState<string[]>([]);
+  const [focusFiles, setFocusFiles] = useState<string[]>([]);
+  const [summary, setSummary] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
+
+  // --- Graph Section Ref & Highlighted Files ---
+  const graphSectionRef = useRef<HTMLDivElement>(null);
+  const [highlightedFiles, setHighlightedFiles] = useState<string[]>([]);
 
   // --- Graph Mode state ("high-level" | "detailed") ---
   const [graphMode, setGraphMode] = useState<GraphMode>("high-level");
 
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode) : null;
+
+  // Build isolated flow subgraph when focusFiles are present from Q&A
+  const focusSubgraph = data && focusFiles.length > 0
+    ? buildFocusSubgraph(data.files, focusFiles)
+    : null;
+
+  function handleShowInGraph() {
+    setGraphMode("detailed");
+    const targets = focusFiles.length > 0 ? focusFiles : referencedFiles;
+    if (targets.length > 0) {
+      setHighlightedFiles(targets);
+    }
+    if (graphSectionRef.current) {
+      graphSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function handleOpenInFullGraph() {
+    if (!repoUrl || focusFiles.length === 0) return;
+    setGraphMode("detailed");
+    setHighlightedFiles(focusFiles);
+    const newUrl = `/repo?url=${encodeURIComponent(repoUrl)}&focusFiles=${encodeURIComponent(focusFiles.join(","))}`;
+    window.history.pushState({}, "", newUrl);
+    if (graphSectionRef.current) {
+      graphSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  // Handle focusFiles search parameter on URL load/change
+  useEffect(() => {
+    if (urlFocusFiles.length > 0) {
+      setHighlightedFiles(urlFocusFiles);
+      setGraphMode("detailed");
+    }
+  }, [rawFocusFiles]);
 
   // --- Recent Analyses state ---
   const [recents, setRecents] = useState<RecentAnalysis[]>([]);
@@ -147,18 +203,26 @@ function RepoPageInner() {
   }, [repoUrl]);
 
   // --- Handler: submit question to /api/ask ---
-  async function handleAsk() {
-    if (!question.trim() || asking || !repoUrl) return;
+  async function handleAsk(overrideQuestion?: string) {
+    const targetQuestion = (overrideQuestion || question).trim();
+    if (!targetQuestion || asking || !repoUrl) return;
+
+    if (overrideQuestion) {
+      setQuestion(overrideQuestion);
+    }
 
     setAsking(true);
     setAskError(null);
     setAnswer(null);
+    setReferencedFiles([]);
+    setFocusFiles([]);
+    setSummary(null);
 
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl, question: question.trim() }),
+        body: JSON.stringify({ repoUrl, question: targetQuestion }),
       });
 
       const json = await res.json();
@@ -167,6 +231,9 @@ function RepoPageInner() {
         setAskError(json.error ?? `Q&A request failed with status ${res.status}`);
       } else {
         setAnswer(json.answer);
+        setReferencedFiles(json.referencedFiles || []);
+        setFocusFiles(json.focusFiles || []);
+        setSummary(json.summary || null);
       }
     } catch (err) {
       setAskError(err instanceof Error ? err.message : "Failed to fetch Q&A answer.");
@@ -355,6 +422,48 @@ function RepoPageInner() {
       {/* 4. Analyze Success View */}
       {data && (
         <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          {/* Focused files indicator banner */}
+          {(focusFile || urlFocusFiles.length > 0) && (
+            <div
+              style={{
+                padding: "0.75rem 1.25rem",
+                borderRadius: "8px",
+                background: "#1e293b",
+                border: "1px solid #f59e0b",
+                color: "#fbbf24",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "1rem",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontSize: "1.1rem" }}>🎯</span>
+                <span style={{ fontSize: "0.95rem" }}>
+                  Focused {urlFocusFiles.length > 1 ? `Files (${urlFocusFiles.length})` : "File"}:{" "}
+                  <code style={{ color: "#ffffff", fontFamily: "monospace" }}>
+                    {focusFile || urlFocusFiles.join(", ")}
+                  </code>
+                </span>
+              </div>
+              <a
+                href={`/repo?url=${encodeURIComponent(repoUrl)}`}
+                style={{
+                  padding: "0.3rem 0.75rem",
+                  borderRadius: "4px",
+                  background: "rgba(245, 158, 11, 0.2)",
+                  border: "1px solid #f59e0b",
+                  color: "#fbbf24",
+                  textDecoration: "none",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                }}
+              >
+                Clear Focus
+              </a>
+            </div>
+          )}
+
           {/* Metadata info cards */}
           <InfoPanel
             repoUrl={repoUrl}
@@ -432,7 +541,7 @@ function RepoPageInner() {
 
               {/* Interactive Force Graph */}
               {activeGraph && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div ref={graphSectionRef} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                   <div
                     style={{
                       display: "flex",
@@ -495,7 +604,12 @@ function RepoPageInner() {
                   </div>
 
                   <GraphExplanation />
-                  <RepoGraph nodes={activeGraph.nodes} edges={activeGraph.edges} />
+                  <RepoGraph
+                    nodes={activeGraph.nodes}
+                    edges={activeGraph.edges}
+                    focusFile={focusFile}
+                    highlightedFiles={highlightedFiles}
+                  />
                 </div>
               )}
             </>
@@ -517,6 +631,38 @@ function RepoPageInner() {
           Ask a question about this repository
         </h2>
 
+        {/* Recommended Questions ("Try asking:") */}
+        {data?.repoGuide && data.repoGuide.recommendedQuestions.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <span style={{ fontSize: "0.85rem", color: "#94a3b8", fontWeight: 600 }}>
+                💡 Try asking ({data.repoGuide.label}):
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              {data.repoGuide.recommendedQuestions.map((rq) => (
+                <button
+                  key={rq}
+                  onClick={() => handleAsk(rq)}
+                  disabled={asking}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "20px",
+                    background: asking ? "#1e293b" : "rgba(56, 189, 248, 0.1)",
+                    border: "1px solid #38bdf8",
+                    color: "#38bdf8",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    cursor: asking ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {rq} →
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Input box and action button */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <textarea
@@ -537,7 +683,7 @@ function RepoPageInner() {
           />
           <div>
             <button
-              onClick={handleAsk}
+              onClick={() => handleAsk()}
               disabled={asking || !question.trim()}
               style={{
                 padding: "0.6rem 1.5rem",
@@ -593,21 +739,190 @@ function RepoPageInner() {
               background: "#1e293b",
               border: "1px solid #334155",
               color: "#f8fafc",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
             }}
           >
-            <h3
-              style={{
-                fontSize: "1rem",
-                fontWeight: 600,
-                color: "#38bdf8",
-                marginBottom: "0.5rem",
-              }}
-            >
-              Answer
-            </h3>
-            <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: "0.95rem" }}>
-              {answer}
+            {/* Flow Summary Card if present */}
+            {summary && (
+              <div
+                style={{
+                  padding: "0.85rem 1rem",
+                  borderRadius: "6px",
+                  background: "rgba(37, 99, 235, 0.15)",
+                  border: "1px solid rgba(59, 130, 246, 0.4)",
+                  color: "#93c5fd",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.4rem",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span style={{ fontSize: "1rem" }}>🌊</span>
+                  <h4 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#bfdbfe", margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Workflow Overview
+                  </h4>
+                </div>
+                <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.5, color: "#e0f2fe" }}>
+                  {summary}
+                </p>
+              </div>
+            )}
+
+            <div>
+              <h3
+                style={{
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  color: "#38bdf8",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Answer
+              </h3>
+              <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: "0.95rem" }}>
+                {answer}
+              </div>
             </div>
+
+            {/* Flow Focused Subgraph Section */}
+            {focusSubgraph && focusSubgraph.nodes.length > 0 && (
+              <div
+                style={{
+                  borderTop: "1px solid #334155",
+                  paddingTop: "1rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <h4
+                    style={{
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      color: "#38bdf8",
+                      margin: 0,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                    }}
+                  >
+                    <span>🌊</span> Focused Flow Subgraph ({focusSubgraph.nodes.length} Nodes)
+                  </h4>
+                  <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                    Isolated execution flow topology
+                  </span>
+                </div>
+
+                <RepoGraph
+                  nodes={focusSubgraph.nodes}
+                  edges={focusSubgraph.edges}
+                  highlightedFiles={focusFiles}
+                />
+
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={handleOpenInFullGraph}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      padding: "0.4rem 0.85rem",
+                      borderRadius: "6px",
+                      background: "#2563eb",
+                      border: "none",
+                      color: "#ffffff",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    🗺️ Open in full graph
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Referenced Files section */}
+            {referencedFiles.length > 0 && (
+              <div
+                style={{
+                  borderTop: "1px solid #334155",
+                  paddingTop: "0.75rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <h4
+                    style={{
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                      color: "#94a3b8",
+                      margin: 0,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Referenced Files ({referencedFiles.length})
+                  </h4>
+                  <button
+                    onClick={handleShowInGraph}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      padding: "0.35rem 0.75rem",
+                      borderRadius: "6px",
+                      background: "#2563eb",
+                      border: "none",
+                      color: "#ffffff",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    🔍 Show in graph
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                  {referencedFiles.map((file) => (
+                    <a
+                      key={file}
+                      href={`/repo?url=${encodeURIComponent(repoUrl)}&focusFile=${encodeURIComponent(file)}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.3rem",
+                        padding: "0.35rem 0.65rem",
+                        borderRadius: "4px",
+                        background: "#0f172a",
+                        border: "1px solid #334155",
+                        color: "#38bdf8",
+                        textDecoration: "none",
+                        fontSize: "0.85rem",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      📄 {file}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

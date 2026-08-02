@@ -121,6 +121,26 @@ export default function DocsPage() {
         </ul>
       </section>
 
+      {/* Section 2.5: Recommended Questions & Guided Tours */}
+      <section
+        style={{
+          background: "#1e293b",
+          border: "1px solid #334155",
+          borderRadius: "8px",
+          padding: "1.5rem",
+        }}
+      >
+        <h2 style={{ fontSize: "1.25rem", fontWeight: 600, color: "#38bdf8", marginTop: 0, marginBottom: "0.75rem" }}>
+          Recommended Questions &amp; Guided Tours
+        </h2>
+        <p style={{ margin: 0, color: "#cbd5e1", lineHeight: 1.6 }}>
+          Codebase Atlas automatically analyzes repository file conventions to detect the project type (such as CLI tools, React applications, or Express APIs). It then suggests tailored <strong>Recommended Questions</strong> so you can instantly explore key entry points and architectural patterns with a single click.
+        </p>
+        <p style={{ margin: 0, marginTop: "0.5rem", color: "#94a3b8", fontSize: "0.9rem", fontStyle: "italic" }}>
+          Example: For a CLI library, you&rsquo;ll see starter questions like &ldquo;Where are commands defined?&rdquo; and &ldquo;How are options parsed?&rdquo;.
+        </p>
+      </section>
+
       {/* Section 3: Current limitations */}
       <section
         style={{
