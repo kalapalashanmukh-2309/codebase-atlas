@@ -90,8 +90,9 @@ function getLinkId(endpoint: string | { id: string }): string {
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
- * Edge & Hover Features:
- * - Thin, semi-transparent default edges with subtle arrowheads.
+ * Layout & Force Tuning:
+ * - Tuned D3 charge force (-350) for ample node repulsion & zero overlapping.
+ * - Centering & gravity decay (velocityDecay: 0.35) for stable, centered topologies.
  * - Interactive node hover: connected edges brighten in cyan, connected neighbors
  *   remain bright, and unrelated nodes/edges fade out smoothly.
  */
@@ -104,6 +105,9 @@ export default function RepoGraph({
   // --- Dynamic import (canvas component can't render on the server) ---
   const [FG2D, setFG2D] = useState<ForceGraph2DComponent | null>(null);
   const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fgRef = useRef<any>(null);
 
   useEffect(() => {
     import("react-force-graph-2d").then((mod) => {
@@ -153,6 +157,29 @@ export default function RepoGraph({
     return () => window.removeEventListener("resize", measure);
   }, []);
 
+  // --- D3 Force Layout Tuning ---
+  useEffect(() => {
+    if (fgRef.current) {
+      // 1. Repulsion force (charge) — spread nodes apart cleanly without overlaps
+      const chargeForce = fgRef.current.d3Force("charge");
+      if (chargeForce) {
+        chargeForce.strength(-350).distanceMax(650);
+      }
+
+      // 2. Link force — comfortable spring distance
+      const linkForce = fgRef.current.d3Force("link");
+      if (linkForce) {
+        linkForce.distance(75).strength(0.4);
+      }
+
+      // 3. Centering force — keep the graph topology neatly centered in view
+      const centerForce = fgRef.current.d3Force("center");
+      if (centerForce) {
+        centerForce.x(dimensions.width / 2).y(dimensions.height / 2);
+      }
+    }
+  }, [FG2D, dimensions.width, dimensions.height]);
+
   // --- Interaction callbacks ---
   const handleNodeClick = useCallback((node: GraphNode) => {
     console.log("Node clicked:", node);
@@ -201,6 +228,7 @@ export default function RepoGraph({
       }}
     >
       <FG2D
+        ref={fgRef}
         graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
@@ -270,10 +298,10 @@ export default function RepoGraph({
           return node.id;
         }}
         nodeRelSize={6}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
+        d3AlphaDecay={0.03}
+        d3VelocityDecay={0.35}
         warmupTicks={100}
-        cooldownTicks={120}
+        cooldownTicks={150}
         /* ---- Dynamic Link Appearance ---- */
         linkColor={(link: GraphLink) => {
           if (!hoverNode) return "rgba(148, 163, 184, 0.22)"; // Thin, subtle line by default
