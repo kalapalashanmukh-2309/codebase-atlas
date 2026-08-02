@@ -2,11 +2,18 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import RepoGraph from "./RepoGraph";
 import InfoPanel from "./InfoPanel";
 import GraphExplanation from "./GraphExplanation";
 import CopyLinkButton from "./CopyLinkButton";
 import { buildGraph, type GraphMode } from "@/lib/graph-builder";
+import {
+  getRecentAnalyses,
+  addRecentAnalysis,
+  formatRepoName,
+  type RecentAnalysis,
+} from "@/lib/recent-analyses";
 
 // ---------------------------------------------------------------------------
 // Types matching the /api/analyze response
@@ -84,6 +91,13 @@ function RepoPageInner() {
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode) : null;
 
+  // --- Recent Analyses state ---
+  const [recents, setRecents] = useState<RecentAnalysis[]>([]);
+
+  useEffect(() => {
+    setRecents(getRecentAnalyses());
+  }, []);
+
   // --- Fetch repository analysis on mount ---
   useEffect(() => {
     if (!repoUrl) {
@@ -112,6 +126,10 @@ function RepoPageInner() {
           setError(json.error ?? `Analysis request failed with status ${res.status}`);
         } else {
           setData(json as AnalyzeResponse);
+          if (repoUrl) {
+            const updated = addRecentAnalysis(repoUrl);
+            setRecents(updated);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -238,7 +256,27 @@ function RepoPageInner() {
           <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Repository</h1>
           <p style={{ wordBreak: "break-all", color: "#94a3b8", margin: 0 }}>{repoUrl}</p>
         </div>
-        <CopyLinkButton />
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <Link
+            href="/docs"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              padding: "0.5rem 0.85rem",
+              borderRadius: "6px",
+              background: "#1e293b",
+              border: "1px solid #334155",
+              color: "#38bdf8",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            📖 Docs
+          </Link>
+          <CopyLinkButton />
+        </div>
       </header>
 
       {/* 2. Analyze Loading State */}
@@ -573,6 +611,45 @@ function RepoPageInner() {
           </div>
         )}
       </section>
+
+      {/* 6. Other Recent Analyses Section */}
+      {recents.filter((r) => r.repoUrl.toLowerCase() !== repoUrl?.toLowerCase()).length > 0 && (
+        <section
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
+            borderTop: "1px solid #334155",
+            paddingTop: "2rem",
+          }}
+        >
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, color: "#94a3b8" }}>
+            Other Recent Analyses
+          </h2>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {recents
+              .filter((r) => r.repoUrl.toLowerCase() !== repoUrl?.toLowerCase())
+              .map((item) => (
+                <a
+                  key={item.repoUrl}
+                  href={`/repo?url=${encodeURIComponent(item.repoUrl)}`}
+                  style={{
+                    padding: "0.4rem 0.85rem",
+                    borderRadius: "6px",
+                    background: "#1e293b",
+                    border: "1px solid #334155",
+                    color: "#38bdf8",
+                    textDecoration: "none",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                  }}
+                >
+                  {formatRepoName(item.repoUrl)}
+                </a>
+              ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
