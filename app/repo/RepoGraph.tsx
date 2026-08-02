@@ -90,10 +90,10 @@ function getLinkId(endpoint: string | { id: string }): string {
  * RepoGraph renders an interactive 2-D force-directed graph of the repo
  * structure using react-force-graph's ForceGraph2D.
  *
- * Animations & Transitions:
- * - Smooth 300ms fade-in and scale-up on load.
- * - Gentle node hover scaling (1.25x) and aura brightening.
- * - Smooth 350ms camera pan/zoom transitions when focusing nodes (no hard jumps).
+ * Sci-Fi Dark UI & Tooltips:
+ * - HTML-styled glassmorphism floating tooltips with monospace paths & metadata badges.
+ * - Deep space dark container background with subtle cyan ambient glow.
+ * - Smooth 300ms fade-in, hover scaling, and camera pan transitions.
  */
 export default function RepoGraph({
   nodes,
@@ -267,7 +267,7 @@ export default function RepoGraph({
         graphData={graphData}
         width={dimensions.width}
         height={dimensions.height}
-        /* ---- Custom Node Rendering with Subtle Animations ---- */
+        /* ---- Custom Node Rendering with Subtle Animations & Glow ---- */
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = node.label;
           const focused = isFocusedNode(node);
@@ -275,7 +275,6 @@ export default function RepoGraph({
           const isHovered = hoverNode && hoverNode.id === node.id;
           const baseRadius = getNodeRadius(node, focused);
           
-          // Gentle scale animation on hover (1.25x) & initial load mount progress
           const radius = baseRadius * (isHovered ? 1.25 : 1) * mountProgress;
           const color = getNodeColor(node, focused);
           const fontSize = (focused ? 13 : isWorkspace ? 12 : 11) / globalScale;
@@ -319,7 +318,7 @@ export default function RepoGraph({
 
           // Label rendering (focused nodes, hovered nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
           if (focused || isHovered || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
-            ctx.font = `${focused || node.isImportant || isWorkspace ? "bold " : ""}${fontSize}px Sans-Serif`;
+            ctx.font = `${focused || node.isImportant || isWorkspace ? "bold " : ""}${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillStyle = focused
@@ -334,12 +333,63 @@ export default function RepoGraph({
 
           ctx.restore();
         }}
-        /* Tooltip displays full relative file path on hover */
+        /* ---- Custom Futuristic Monospace HTML Floating Tooltip ---- */
         nodeLabel={(node: GraphNode) => {
-          if (node.type === "workspace") return `Workspace: ${node.id.replace(/^workspace:/, "")}`;
-          if (node.type === "folder") return `Folder: ${node.id}`;
-          if (node.isImportant) return `⭐ Key Entry File: ${node.id}`;
-          return node.id;
+          const typeBadge =
+            node.type === "workspace"
+              ? "📦 WORKSPACE"
+              : node.type === "folder"
+              ? "📁 FOLDER CONTAINER"
+              : node.isImportant
+              ? "⭐ KEY ENTRY FILE"
+              : node.isLowValue
+              ? "📄 UTILITY MODULE"
+              : "📄 SOURCE MODULE";
+
+          const badgeColor =
+            node.type === "workspace"
+              ? "#c084fc"
+              : node.type === "folder"
+              ? "#818cf8"
+              : node.isImportant
+              ? "#34d399"
+              : node.isLowValue
+              ? "#94a3b8"
+              : "#38bdf8";
+
+          const cleanPath = node.id.replace(/^workspace:/, "");
+          const ext = cleanPath.includes(".") ? cleanPath.split(".").pop() || "" : "";
+
+          return `
+            <div style="
+              padding: 0.65rem 0.9rem;
+              background: rgba(11, 15, 25, 0.94);
+              backdrop-filter: blur(12px);
+              border: 1px solid rgba(56, 189, 248, 0.35);
+              border-radius: 8px;
+              box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.15);
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+              color: #f8fafc;
+              font-size: 0.8rem;
+              line-height: 1.5;
+              max-width: 380px;
+              pointer-events: none;
+            ">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.4rem; border-bottom: 1px solid rgba(51, 65, 85, 0.6); padding-bottom: 0.35rem;">
+                <span style="font-size: 0.68rem; font-weight: 700; color: ${badgeColor}; letter-spacing: 0.06em;">
+                  ${typeBadge}
+                </span>
+                ${ext ? `<span style="font-size: 0.65rem; color: #64748b; background: rgba(51, 65, 85, 0.5); padding: 0.1rem 0.35rem; border-radius: 3px; text-transform: uppercase;">.${ext}</span>` : ""}
+              </div>
+              <div style="font-weight: 600; color: #f1f5f9; word-break: break-all; font-size: 0.85rem;">
+                ${cleanPath}
+              </div>
+              <div style="margin-top: 0.4rem; font-size: 0.72rem; color: #94a3b8; display: flex; gap: 0.8rem;">
+                <span>Type: <strong style="color: #cbd5e1;">${node.type}</strong></span>
+                ${node.isImportant ? '<span style="color: #34d399; font-weight: 600;">⭐ Primary Anchor</span>' : ""}
+              </div>
+            </div>
+          `;
         }}
         nodeRelSize={6}
         d3AlphaDecay={0.03}
