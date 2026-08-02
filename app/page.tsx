@@ -22,7 +22,7 @@ export default function HomePage() {
 
     // URL-encode the repo URL and navigate to the repo page
     const encoded = encodeURIComponent(repoUrl.trim());
-    router.push(`/repo/${encoded}`);
+    router.push(`/repo?url=${encoded}`);
   }
 
   return (

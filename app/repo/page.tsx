@@ -1,9 +1,11 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import RepoGraph from "./RepoGraph";
 import InfoPanel from "./InfoPanel";
 import GraphExplanation from "./GraphExplanation";
+import CopyLinkButton from "./CopyLinkButton";
 
 // ---------------------------------------------------------------------------
 // Types matching the /api/analyze response
@@ -27,25 +29,41 @@ interface AnalyzeResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Page component
+// Suspense wrapper (useSearchParams requires a Suspense boundary)
 // ---------------------------------------------------------------------------
 
-/**
- * /repo/[id] — Repository detail page.
- *
- * Uses a simple column layout to display:
- *   1. Repository URL Header
- *   2. Analysis state (loading, error, or InfoPanel + AI Overview + Dependency Graph)
- *   3. Q&A section with dedicated loading, error, and answer states
- */
-export default function RepoPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  // Unwrap route params
-  const { id } = use(params);
-  const repoUrl = decodeURIComponent(id);
+export default function RepoPage() {
+  return (
+    <Suspense
+      fallback={
+        <main
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "100vh",
+            color: "#94a3b8",
+          }}
+        >
+          Loading…
+        </main>
+      }
+    >
+      <RepoPageInner />
+    </Suspense>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inner page component
+// ---------------------------------------------------------------------------
+
+function RepoPageInner() {
+  const searchParams = useSearchParams();
+  const rawUrl = searchParams.get("url");
+
+  // Decode the URL (encodeURIComponent was used when navigating here)
+  const repoUrl = rawUrl ? decodeURIComponent(rawUrl) : null;
 
   // --- Analyze state ---
   const [loading, setLoading] = useState(true);
@@ -60,6 +78,11 @@ export default function RepoPage({
 
   // --- Fetch repository analysis on mount ---
   useEffect(() => {
+    if (!repoUrl) {
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
 
     async function analyze() {
@@ -99,7 +122,7 @@ export default function RepoPage({
 
   // --- Handler: submit question to /api/ask ---
   async function handleAsk() {
-    if (!question.trim() || asking) return;
+    if (!question.trim() || asking || !repoUrl) return;
 
     setAsking(true);
     setAskError(null);
@@ -126,6 +149,62 @@ export default function RepoPage({
     }
   }
 
+  // --- Missing or invalid URL ---
+  if (!repoUrl) {
+    return (
+      <main
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          padding: "2rem",
+          gap: "1.5rem",
+        }}
+      >
+        <div
+          style={{
+            padding: "1.5rem",
+            borderRadius: "8px",
+            background: "#450a0a",
+            border: "1px solid #991b1b",
+            color: "#fca5a5",
+            maxWidth: "36rem",
+            textAlign: "center",
+          }}
+        >
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "#fecaca", marginBottom: "0.75rem" }}>
+            Missing Repository URL
+          </h2>
+          <p style={{ margin: 0, lineHeight: 1.6 }}>
+            Please go back and enter a valid GitHub repository URL.
+          </p>
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.9rem", color: "#fecaca" }}>
+            Expected format:{" "}
+            <code style={{ fontFamily: "monospace" }}>
+              /repo?url=https%3A%2F%2Fgithub.com%2Fowner%2Frepo
+            </code>
+          </p>
+        </div>
+        <a
+          href="/"
+          style={{
+            display: "inline-block",
+            padding: "0.6rem 1.5rem",
+            borderRadius: "6px",
+            background: "#2563eb",
+            color: "#ffffff",
+            textDecoration: "none",
+            fontWeight: 600,
+          }}
+        >
+          ← Go to Home
+        </a>
+      </main>
+    );
+  }
+
   return (
     <main
       style={{
@@ -138,9 +217,20 @@ export default function RepoPage({
       }}
     >
       {/* 1. Header */}
-      <header style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-        <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Repository</h1>
-        <p style={{ wordBreak: "break-all", color: "#94a3b8" }}>{repoUrl}</p>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "1rem",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+          <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Repository</h1>
+          <p style={{ wordBreak: "break-all", color: "#94a3b8", margin: 0 }}>{repoUrl}</p>
+        </div>
+        <CopyLinkButton />
       </header>
 
       {/* 2. Analyze Loading State */}
