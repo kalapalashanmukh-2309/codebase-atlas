@@ -67,6 +67,17 @@ export default function HomePage() {
         }}
       >
         <Link
+          href="/missions"
+          style={{
+            color: "#94a3b8",
+            textDecoration: "none",
+            fontSize: "0.95rem",
+            fontWeight: 500,
+          }}
+        >
+          🎯 Missions
+        </Link>
+        <Link
           href="/onboarding"
           style={{
             color: "#38bdf8",

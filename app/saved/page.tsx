@@ -101,6 +101,17 @@ export default function SavedViewsPage() {
         </Link>
         <div style={{ display: "flex", gap: "1.25rem", alignItems: "center" }}>
           <Link
+            href="/missions"
+            style={{
+              color: "#94a3b8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+            }}
+          >
+            🎯 Missions
+          </Link>
+          <Link
             href="/onboarding"
             style={{
               color: "#94a3b8",

@@ -438,6 +438,24 @@ function RepoPageInner() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
           <Link
+            href="/missions"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              padding: "0.5rem 0.85rem",
+              borderRadius: "6px",
+              background: "#1e293b",
+              border: "1px solid #334155",
+              color: "#38bdf8",
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              textDecoration: "none",
+            }}
+          >
+            🎯 Missions
+          </Link>
+          <Link
             href="/onboarding"
             style={{
               display: "inline-flex",
