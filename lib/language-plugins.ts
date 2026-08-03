@@ -4,6 +4,12 @@
  * Language plugin abstraction and registry for Codebase Atlas.
  * Provides extensible interfaces for file filtering, import extraction,
  * function definition extraction, call graph extraction, and repository language detection.
+ *
+ * Supported Language Plugins:
+ *  - TypeScript / JavaScript (.ts, .tsx, .js, .jsx, .mjs, .cjs)
+ *  - Python (.py)
+ *  - Go (.go)
+ *  - Rust (.rs)
  */
 
 import ts from "typescript";
@@ -26,7 +32,7 @@ export type CallInfo = {
 };
 
 export type LanguagePlugin = {
-  name: string; // e.g. "typescript", "python", "go"
+  name: string; // e.g. "typescript", "python", "go", "rust"
   fileFilter: (path: string) => boolean;
   extractImports?: (file: { path: string; content: string }) => string[];
   extractFunctions?: (file: { path: string; content: string }) => FunctionInfo[];
@@ -40,7 +46,7 @@ export type RepoLanguageHint = {
 };
 
 // ---------------------------------------------------------------------------
-// TypeScript / JavaScript Language Plugin
+// 1. TypeScript / JavaScript Language Plugin
 // ---------------------------------------------------------------------------
 
 function getScriptKind(filePath: string): ts.ScriptKind {
@@ -249,10 +255,187 @@ export const typescriptPlugin: LanguagePlugin = {
 };
 
 // ---------------------------------------------------------------------------
+// 2. Python Language Plugin
+// ---------------------------------------------------------------------------
+
+export const pythonPlugin: LanguagePlugin = {
+  name: "python",
+  fileFilter: (path: string) => {
+    const lower = path.toLowerCase();
+    return (
+      lower.endsWith(".py") &&
+      !lower.includes("__pycache__") &&
+      !lower.includes(".venv") &&
+      !lower.includes("/venv/") &&
+      !lower.includes("/vendor/")
+    );
+  },
+
+  extractImports: (file: { path: string; content: string }): string[] => {
+    const imports: string[] = [];
+    const lines = file.content.split("\n");
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("#") || !trimmed) continue;
+
+      // from foo.bar import baz
+      const fromMatch = trimmed.match(/^from\s+([.\w]+)\s+import/);
+      if (fromMatch) {
+        imports.push(fromMatch[1]);
+        continue;
+      }
+
+      // import foo, bar.baz
+      const importMatch = trimmed.match(/^import\s+([\w.,\s]+)/);
+      if (importMatch) {
+        const pkgs = importMatch[1].split(",").map((p) => p.trim().split(" ")[0]);
+        for (const pkg of pkgs) {
+          if (pkg) imports.push(pkg);
+        }
+      }
+    }
+
+    return Array.from(new Set(imports));
+  },
+
+  extractFunctions: (file: { path: string; content: string }): FunctionInfo[] => {
+    const functions: FunctionInfo[] = [];
+    const lines = file.content.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(/^\s*(?:async\s+)?def\s+([a-zA-Z_]\w*)\s*\(/);
+      if (match) {
+        functions.push({
+          name: match[1],
+          lineStart: i + 1,
+          isExport: true,
+        });
+      }
+    }
+
+    return functions;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 3. Go Language Plugin
+// ---------------------------------------------------------------------------
+
+export const goPlugin: LanguagePlugin = {
+  name: "go",
+  fileFilter: (path: string) => {
+    const lower = path.toLowerCase();
+    return lower.endsWith(".go") && !lower.includes("/vendor/");
+  },
+
+  extractImports: (file: { path: string; content: string }): string[] => {
+    const imports: string[] = [];
+    const content = file.content;
+
+    // Single-line import "pkg"
+    const singleMatches = content.matchAll(/import\s+"([^"]+)"/g);
+    for (const m of singleMatches) {
+      imports.push(m[1]);
+    }
+
+    // Multi-line import ( ... )
+    const blockMatch = content.match(/import\s*\(([\s\S]*?)\)/);
+    if (blockMatch) {
+      const blockContent = blockMatch[1];
+      const quotedMatches = blockContent.matchAll(/"([^"]+)"/g);
+      for (const m of quotedMatches) {
+        imports.push(m[1]);
+      }
+    }
+
+    return Array.from(new Set(imports));
+  },
+
+  extractFunctions: (file: { path: string; content: string }): FunctionInfo[] => {
+    const functions: FunctionInfo[] = [];
+    const lines = file.content.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // func (r *Receiver) Foo(...) or func Foo(...)
+      const match = line.match(/^func\s+(?:\([^)]+\)\s+)?([a-zA-Z_]\w*)\s*\(/);
+      if (match) {
+        const name = match[1];
+        const isExport = /^[A-Z]/.test(name);
+        functions.push({
+          name,
+          lineStart: i + 1,
+          isExport,
+        });
+      }
+    }
+
+    return functions;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 4. Rust Language Plugin
+// ---------------------------------------------------------------------------
+
+export const rustPlugin: LanguagePlugin = {
+  name: "rust",
+  fileFilter: (path: string) => {
+    const lower = path.toLowerCase();
+    return lower.endsWith(".rs") && !lower.includes("/target/");
+  },
+
+  extractImports: (file: { path: string; content: string }): string[] => {
+    const imports: string[] = [];
+    const lines = file.content.split("\n");
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const match = trimmed.match(/^pub\s+use\s+([^;]+);|^use\s+([^;]+);/);
+      if (match) {
+        const rawPath = (match[1] || match[2]).trim();
+        imports.push(rawPath);
+      }
+    }
+
+    return Array.from(new Set(imports));
+  },
+
+  extractFunctions: (file: { path: string; content: string }): FunctionInfo[] => {
+    const functions: FunctionInfo[] = [];
+    const lines = file.content.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // pub fn foo(...) or pub(crate) async fn foo(...) or fn foo(...)
+      const match = line.match(/^\s*(pub(?:\([^)]+\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z_]\w*)/);
+      if (match) {
+        const isExport = Boolean(match[1]);
+        const name = match[2];
+        functions.push({
+          name,
+          lineStart: i + 1,
+          isExport,
+        });
+      }
+    }
+
+    return functions;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Language Plugin Registry
 // ---------------------------------------------------------------------------
 
-export const languagePlugins: LanguagePlugin[] = [typescriptPlugin];
+export const languagePlugins: LanguagePlugin[] = [
+  typescriptPlugin,
+  pythonPlugin,
+  goPlugin,
+  rustPlugin,
+];
 
 export function findLanguagePlugin(path: string): LanguagePlugin | null {
   for (const plugin of languagePlugins) {
@@ -311,7 +494,7 @@ export function detectRepoLanguages(files: string[]): RepoLanguageHint[] {
 
     if (hasPyProject && pyFileCount > 0) {
       confidence = "high";
-      reason = `Found Python config (${hasPyProject}) and ${pyFileCount} .py files.`;
+      reason = `Found Python configuration and ${pyFileCount} .py files.`;
     } else if (pyFileCount > 3) {
       confidence = "high";
       reason = `Found ${pyFileCount} Python files.`;
@@ -356,10 +539,23 @@ export function detectRepoLanguages(files: string[]): RepoLanguageHint[] {
   const rustFileCount = lowerFiles.filter((f) => f.endsWith(".rs")).length;
 
   if (hasCargo || rustFileCount > 0) {
+    let confidence: "high" | "medium" | "low" = "low";
+    let reason = `Found ${rustFileCount} Rust files.`;
+
+    if (hasCargo && rustFileCount > 0) {
+      confidence = "high";
+      reason = `Found Cargo.toml and ${rustFileCount} Rust files.`;
+    } else if (rustFileCount > 3) {
+      confidence = "high";
+      reason = `Found ${rustFileCount} Rust files.`;
+    } else if (rustFileCount > 0) {
+      confidence = "medium";
+    }
+
     hints.push({
       language: "Rust",
-      confidence: hasCargo && rustFileCount > 0 ? "high" : "medium",
-      reason: `Found ${hasCargo ? "Cargo.toml and " : ""}${rustFileCount} Rust files.`,
+      confidence,
+      reason,
     });
   }
 

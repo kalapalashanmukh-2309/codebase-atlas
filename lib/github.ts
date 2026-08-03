@@ -198,8 +198,18 @@ export async function fetchRepoTree(
 // Graph building
 // ---------------------------------------------------------------------------
 
-/** Supported source file extensions: TypeScript and JavaScript variants. */
-const SUPPORTED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+/** Supported source file extensions: TypeScript, JavaScript, Python, Go, and Rust variants. */
+const SUPPORTED_EXTENSIONS = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".go",
+  ".rs",
+];
 
 /**
  * Checks if a file path belongs to a supported source code file type (.ts, .tsx, .js, .jsx, .mjs, .cjs).
