@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import type { DiffExplanation } from "@/lib/diff-explainer";
 
 const SAMPLE_DIFF = `diff --git a/lib/qa.ts b/lib/qa.ts
 index a1b2c3d..e5f6g7h 100644
@@ -27,8 +28,7 @@ function ExplainDiffInner() {
   const [prUrl, setPrUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [explanation, setExplanation] = useState<string | null>(null);
-  const [affectedFiles, setAffectedFiles] = useState<string[]>([]);
+  const [explanation, setExplanation] = useState<DiffExplanation | null>(null);
 
   useEffect(() => {
     if (initialRepoUrl) {
@@ -51,7 +51,6 @@ function ExplainDiffInner() {
         body: JSON.stringify({
           diff: diff.trim(),
           repoUrl: repoUrl.trim() || undefined,
-          prUrl: prUrl.trim() || undefined,
         }),
       });
 
@@ -61,7 +60,6 @@ function ExplainDiffInner() {
         setError(json.error || `Failed to explain diff (${res.status})`);
       } else {
         setExplanation(json.explanation);
-        setAffectedFiles(json.affectedFiles || []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch diff explanation.");
@@ -371,75 +369,151 @@ function ExplainDiffInner() {
             gap: "0.6rem",
           }}
         >
-          <span>⏳ Analyzing diff and generating explanation…</span>
+          <span>⏳ Analyzing architectural impact and generating structured explanation…</span>
         </div>
       )}
 
-      {/* Explanation Results Container */}
+      {/* Structured Explanation Output */}
       {explanation && (
         <div
           style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "1.25rem",
             padding: "1.5rem",
             borderRadius: "12px",
             background: "rgba(15, 23, 42, 0.9)",
             border: "1px solid rgba(56, 189, 248, 0.3)",
             boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "1rem",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              paddingBottom: "0.75rem",
-              borderBottom: "1px solid rgba(51, 65, 85, 0.4)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <span style={{ fontSize: "1.2rem" }}>✨</span>
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize: "1.05rem",
-                  fontWeight: 700,
-                  color: "#38bdf8",
-                  fontFamily: "ui-monospace, monospace",
-                }}
-              >
-                AI Diff Explanation
-              </h3>
-            </div>
+          {/* Summary Section */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <span
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                color: "#38bdf8",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              📝 High-Level Summary
+            </span>
+            <p
+              style={{
+                margin: 0,
+                fontSize: "0.95rem",
+                lineHeight: 1.6,
+                color: "#f8fafc",
+              }}
+            >
+              {explanation.summary}
+            </p>
+          </div>
 
-            {affectedFiles.length > 0 && (
+          {/* Affected Modules */}
+          {explanation.affectedModules.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
               <span
                 style={{
-                  fontSize: "0.72rem",
-                  padding: "0.15rem 0.45rem",
-                  borderRadius: "4px",
-                  background: "rgba(56, 189, 248, 0.12)",
-                  color: "#38bdf8",
-                  border: "1px solid rgba(56, 189, 248, 0.25)",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  color: "#cbd5e1",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
                   fontFamily: "ui-monospace, monospace",
                 }}
               >
-                {affectedFiles.length} file{affectedFiles.length !== 1 ? "s" : ""} modified
+                📁 Affected Modules ({explanation.affectedModules.length})
               </span>
-            )}
-          </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                {explanation.affectedModules.map((mod, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      fontSize: "0.8rem",
+                      padding: "0.2rem 0.6rem",
+                      borderRadius: "4px",
+                      background: "rgba(56, 189, 248, 0.12)",
+                      color: "#38bdf8",
+                      border: "1px solid rgba(56, 189, 248, 0.25)",
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  >
+                    {mod}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
-          <div
-            style={{
-              whiteSpace: "pre-wrap",
-              lineHeight: 1.65,
-              fontSize: "0.95rem",
-              color: "#e2e8f0",
-            }}
-          >
-            {explanation}
-          </div>
+          {/* Key Changes */}
+          {explanation.keyChanges.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  color: "#34d399",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                🔍 Key Architectural Changes
+              </span>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "1.25rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.35rem",
+                  fontSize: "0.9rem",
+                  color: "#e2e8f0",
+                }}
+              >
+                {explanation.keyChanges.map((change, idx) => (
+                  <li key={idx}>{change}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Risks & Reviewer Notice */}
+          {explanation.risks.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  color: "#fbbf24",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                ⚠️ Risks & Reviewer Considerations
+              </span>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "1.25rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.35rem",
+                  fontSize: "0.9rem",
+                  color: "#fef08a",
+                }}
+              >
+                {explanation.risks.map((risk, idx) => (
+                  <li key={idx}>{risk}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </main>

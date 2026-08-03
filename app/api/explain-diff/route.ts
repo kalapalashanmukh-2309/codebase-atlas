@@ -1,17 +1,21 @@
 /**
  * POST /api/explain-diff
  *
- * Accepts { diff: string, repoUrl?: string, prUrl?: string } and generates
- * an AI-powered explanation of the code changes, affected files, logic walkthrough,
- * and potential impact.
+ * Accepts { diff: string, repoUrl?: string } and returns a structured JSON
+ * explanation containing summary, affectedModules, keyChanges, and risks.
  */
+
+import {
+  EXPLAIN_DIFF_PROMPT,
+  parseDiffExplanationJson,
+  type DiffExplanation,
+} from "@/lib/diff-explainer";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 interface ExplainDiffRequest {
   diff?: string;
   repoUrl?: string;
-  prUrl?: string;
 }
 
 export async function POST(request: Request) {
@@ -26,7 +30,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { diff, repoUrl, prUrl } = body;
+  const { diff, repoUrl } = body;
 
   if (!diff || !diff.trim()) {
     return Response.json(
@@ -38,53 +42,44 @@ export async function POST(request: Request) {
   const cleanDiff = diff.trim();
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // Extract modified files from diff header regex for metadata
+  // Extract modified files from diff header regex
   const fileMatches = Array.from(
     cleanDiff.matchAll(/(?:---|\+\+\+)\s+[ab]\/(.+)/g)
   ).map((m) => m[1]);
-
   const affectedFiles = Array.from(new Set(fileMatches));
 
   if (!apiKey) {
-    // Deterministic fallback if API key is unconfigured
+    // Fallback if API key is not configured
     const additionCount = (cleanDiff.match(/^\+[^+]/gm) || []).length;
     const deletionCount = (cleanDiff.match(/^-[^-]/gm) || []).length;
 
-    const fallbackMarkdown = `### 📝 Diff Summary (Offline Mode)
-**Files Modified**: ${affectedFiles.length > 0 ? affectedFiles.join(", ") : "Detected from diff"}
-**Lines Added**: +${additionCount}
-**Lines Removed**: -${deletionCount}
-
-> [!NOTE]
-> GEMINI_API_KEY is not configured. Add your API key to environment variables for detailed AI explanation.
-
-#### Raw Changes Overview
-\`\`\`diff
-${cleanDiff.slice(0, 1500)}${cleanDiff.length > 1500 ? "\n... (truncated)" : ""}
-\`\`\`
-`;
+    const fallbackExplanation: DiffExplanation = {
+      summary: `This diff modifies ${affectedFiles.length} file(s) with +${additionCount} additions and -${deletionCount} deletions. (Offline Mode)`,
+      affectedModules: affectedFiles.length > 0 ? affectedFiles : ["Repository Source Files"],
+      keyChanges: [
+        `Added ${additionCount} line(s) across modified files.`,
+        `Removed ${deletionCount} line(s) across modified files.`,
+        "Pasted patch contains unified diff syntax.",
+      ],
+      risks: [
+        "GEMINI_API_KEY is not configured for full AI architectural risk analysis.",
+        "Ensure all modified functions have corresponding unit test coverage.",
+      ],
+    };
 
     return Response.json({
-      explanation: fallbackMarkdown,
+      explanation: fallbackExplanation,
+      summary: fallbackExplanation.summary,
+      affectedModules: fallbackExplanation.affectedModules,
+      keyChanges: fallbackExplanation.keyChanges,
+      risks: fallbackExplanation.risks,
       affectedFiles,
-      additions: additionCount,
-      deletions: deletionCount,
     });
   }
 
-  // Construct LLM prompt
-  const systemInstruction = `You are an expert principal software engineer analyzing code diffs and pull requests.
-Provide a clear, scannable, and developer-friendly explanation of the provided diff.
-Structure your response in Markdown using standard headers and emojis:
-1. 📝 **Summary**: 2-3 sentence overview of what this diff accomplishes.
-2. 📁 **Affected Files**: list each file with additions/deletions.
-3. 🔍 **Detailed Breakdown**: key code changes, logic updates, or refactorings.
-4. ⚠️ **Impact & Considerations**: security, performance, or edge cases to consider.`;
-
-  const userPrompt = `Please explain the following diff:
+  const userPrompt = `${EXPLAIN_DIFF_PROMPT}
 
 ${repoUrl ? `Repository Context: ${repoUrl}` : ""}
-${prUrl ? `Pull Request URL: ${prUrl}` : ""}
 
 \`\`\`diff
 ${cleanDiff.slice(0, 12000)}
@@ -97,9 +92,6 @@ ${cleanDiff.slice(0, 12000)}
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: systemInstruction }],
-          },
           contents: [
             {
               role: "user",
@@ -109,6 +101,7 @@ ${cleanDiff.slice(0, 12000)}
           generationConfig: {
             temperature: 0.2,
             maxOutputTokens: 2000,
+            response_mime_type: "application/json",
           },
         }),
       }
@@ -121,11 +114,16 @@ ${cleanDiff.slice(0, 12000)}
 
     const json = await res.json();
     const rawText =
-      json.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Unable to generate explanation for this diff.";
+      json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+    const explanation = parseDiffExplanationJson(rawText, affectedFiles);
 
     return Response.json({
-      explanation: rawText,
+      explanation,
+      summary: explanation.summary,
+      affectedModules: explanation.affectedModules,
+      keyChanges: explanation.keyChanges,
+      risks: explanation.risks,
       affectedFiles,
     });
   } catch (err: unknown) {
