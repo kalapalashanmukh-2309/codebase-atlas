@@ -14,6 +14,7 @@ import CreateGuideModal from "./CreateGuideModal";
 import OnboardingGuideView from "./OnboardingGuideView";
 import RepoDocsList from "./RepoDocsList";
 import DocsPageViewModal from "./DocsPageViewModal";
+import TopFunctionsPanel from "./TopFunctionsPanel";
 import { getDocsPagesForRepo, type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -53,6 +54,10 @@ interface AnalyzeResponse {
     recommendedQuestions: string[];
   };
   monorepoInfo?: MonorepoInfo;
+  functionCounts?: {
+    allFunctions: { name: string; count: number; files: string[] }[];
+    hooks?: { name: string; count: number; files: string[] }[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +210,10 @@ function RepoPageInner() {
       questionInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       questionInputRef.current.focus();
     }
+  }
+
+  function handleSelectFunctionCall(functionName: string) {
+    handleSelectQuestion(`Where is ${functionName} called?`);
   }
 
   function handleOpenDocsPage(page: DocsPage) {
@@ -702,6 +711,14 @@ function RepoPageInner() {
             repoUrl={repoUrl}
             onOpenDocsPage={handleOpenDocsPage}
           />
+
+          {/* Most Used Functions & Hooks Panel */}
+          {data.functionCounts && (
+            <TopFunctionsPanel
+              functionCounts={data.functionCounts}
+              onSelectFunction={handleSelectFunctionCall}
+            />
+          )}
 
           {/* Onboarding Guide for this repo */}
           <OnboardingGuideView
