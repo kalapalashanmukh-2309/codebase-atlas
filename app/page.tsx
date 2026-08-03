@@ -67,12 +67,23 @@ export default function HomePage() {
         }}
       >
         <Link
-          href="/docs"
+          href="/saved"
           style={{
             color: "#38bdf8",
             textDecoration: "none",
             fontSize: "0.95rem",
             fontWeight: 600,
+          }}
+        >
+          📌 Saved Views
+        </Link>
+        <Link
+          href="/docs"
+          style={{
+            color: "#94a3b8",
+            textDecoration: "none",
+            fontSize: "0.95rem",
+            fontWeight: 500,
           }}
         >
           Docs / About →

@@ -68,7 +68,20 @@ export default function DocsPage() {
         >
           ← Back to Home
         </Link>
-        <span style={{ fontSize: "0.85rem", color: "#64748b" }}>Codebase Atlas Documentation</span>
+        <div style={{ display: "flex", gap: "1.25rem", alignItems: "center" }}>
+          <Link
+            href="/saved"
+            style={{
+              color: "#38bdf8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+            }}
+          >
+            📌 Saved Views
+          </Link>
+          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>Codebase Atlas Documentation</span>
+        </div>
       </nav>
 
       {/* Hero Title */}
