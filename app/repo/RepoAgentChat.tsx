@@ -46,7 +46,7 @@ export default function RepoAgentChat({
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
-  function handleSend(e?: React.FormEvent) {
+  async function handleSend(e?: React.FormEvent) {
     if (e) e.preventDefault();
     if (!input.trim() || sending) return;
 
@@ -66,12 +66,29 @@ export default function RepoAgentChat({
     setInput("");
     setSending(true);
 
-    // Simulate agent response processing
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl,
+          messages: updatedMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+
+      const json = await res.json();
+      const replyText =
+        res.ok && json.content
+          ? json.content
+          : `Got your message: '${userText}'.`;
+
       const botMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: `Got your message: '${userText}'. I'm not connected to an LLM yet.`,
+        content: replyText,
         timestamp: new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
@@ -79,8 +96,20 @@ export default function RepoAgentChat({
       };
 
       setMessages((prev) => [...prev, botMsg]);
+    } catch {
+      const botMsg: AgentMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `Got your message: '${userText}'.`,
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      };
+      setMessages((prev) => [...prev, botMsg]);
+    } finally {
       setSending(false);
-    }, 600);
+    }
   }
 
   return (
