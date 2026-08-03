@@ -25,6 +25,7 @@ interface SavedViewsListProps {
 export default function SavedViewsList({ repoUrl, refreshKey }: SavedViewsListProps) {
   const [views, setViews] = useState<SavedView[]>([]);
   const [deletedId, setDeletedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setViews(getSavedViewsForRepo(repoUrl));
@@ -50,6 +51,25 @@ export default function SavedViewsList({ repoUrl, refreshKey }: SavedViewsListPr
       focusFiles: view.focusFiles,
     });
     window.location.href = url;
+  }
+
+  function handleCopyLink(view: SavedView) {
+    const url = buildRepoUrl(view.repoUrl, {
+      graphMode: view.graphMode,
+      focusFiles: view.focusFiles,
+    });
+    const fullUrl = `${window.location.origin}${url}`;
+
+    navigator.clipboard.writeText(fullUrl).then(
+      () => {
+        setCopiedId(view.id);
+        setTimeout(() => setCopiedId(null), 1500);
+      },
+      () => {
+        // Fallback: prompt user
+        window.prompt("Copy this link:", fullUrl);
+      }
+    );
   }
 
   if (views.length === 0) return null;
@@ -256,6 +276,50 @@ export default function SavedViewsList({ repoUrl, refreshKey }: SavedViewsListPr
                 >
                   ▶ Open
                 </button>
+
+                {/* Copy permalink button */}
+                {copiedId === view.id ? (
+                  <span
+                    style={{
+                      padding: "0.35rem 0.5rem",
+                      borderRadius: "5px",
+                      background: "rgba(52, 211, 153, 0.12)",
+                      border: "1px solid rgba(52, 211, 153, 0.35)",
+                      color: "#34d399",
+                      fontSize: "0.72rem",
+                      fontWeight: 600,
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  >
+                    ✓ Copied
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handleCopyLink(view)}
+                    title="Copy shareable permalink"
+                    style={{
+                      padding: "0.35rem 0.5rem",
+                      borderRadius: "5px",
+                      border: "1px solid rgba(51, 65, 85, 0.5)",
+                      background: "transparent",
+                      color: "#94a3b8",
+                      fontSize: "0.78rem",
+                      cursor: "pointer",
+                      fontFamily: "ui-monospace, monospace",
+                      transition: "color 0.2s, border-color 0.2s",
+                    }}
+                    onMouseOver={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.color = "#38bdf8";
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(56, 189, 248, 0.4)";
+                    }}
+                    onMouseOut={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.color = "#94a3b8";
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(51, 65, 85, 0.5)";
+                    }}
+                  >
+                    🔗
+                  </button>
+                )}
 
                 <button
                   onClick={() => handleDelete(view.id)}
