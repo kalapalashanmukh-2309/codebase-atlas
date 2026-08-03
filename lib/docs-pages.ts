@@ -93,6 +93,26 @@ export function deriveDocsPagesFromRepoState(
   const usedSlugs = new Set<string>();
   let order = 0;
 
+  // 0. Always include default "Overview" page out of the box
+  const overviewSlug = "overview";
+  usedSlugs.add(overviewSlug);
+  pages.push({
+    id: `doc_overview_${slugify(repoUrl)}`,
+    repoUrl,
+    slug: overviewSlug,
+    title: "Overview",
+    summary: `High-level architectural overview of ${repoUrl}, highlighting key modules and core entry points.`,
+    graphMode: "high-level",
+    focusFiles: undefined,
+    suggestedQuestions: [
+      "What is the main purpose of this repo?",
+      "Where are the main entry points located?",
+      "How are core modules structured?",
+      "Where does execution or request handling start?",
+    ],
+    order: order++,
+  });
+
   // 1. Convert Onboarding steps
   if (onboardingGuide && onboardingGuide.steps.length > 0) {
     for (const step of onboardingGuide.steps) {
@@ -174,6 +194,28 @@ export function getDocsPagesForRepo(repoUrl: string): DocsPage[] {
   const repoPages = allStored.filter((p) => p.repoUrl === repoUrl);
 
   if (repoPages.length > 0) {
+    const hasOverview = repoPages.some((p) => p.slug === "overview");
+    if (!hasOverview) {
+      const overviewPage: DocsPage = {
+        id: `doc_overview_${slugify(repoUrl)}`,
+        repoUrl,
+        slug: "overview",
+        title: "Overview",
+        summary: `High-level architectural overview of ${repoUrl}, highlighting key modules and core entry points.`,
+        graphMode: "high-level",
+        focusFiles: undefined,
+        suggestedQuestions: [
+          "What is the main purpose of this repo?",
+          "Where are the main entry points located?",
+          "How are core modules structured?",
+          "Where does execution or request handling start?",
+        ],
+        order: 0,
+      };
+      const updated = [overviewPage, ...repoPages];
+      writeAll([...allStored, overviewPage]);
+      return updated.sort((a, b) => a.order - b.order);
+    }
     return repoPages.sort((a, b) => a.order - b.order);
   }
 
