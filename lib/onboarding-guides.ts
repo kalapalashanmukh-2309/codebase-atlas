@@ -135,3 +135,45 @@ export function deleteGuide(id: string): void {
   const filtered = all.filter((g) => g.id !== id);
   writeAll(filtered);
 }
+
+// ---------------------------------------------------------------------------
+// Onboarding Progress API
+// ---------------------------------------------------------------------------
+
+function getProgressKey(guideId: string): string {
+  return `codebase_atlas_onboarding_progress_${guideId}`;
+}
+
+/**
+ * Returns array of completed step IDs for a given onboarding guide.
+ */
+export function getGuideProgress(guideId: string): string[] {
+  if (!isBrowser() || !guideId) return [];
+  try {
+    const raw = localStorage.getItem(getProgressKey(guideId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Toggles a step's completion status for a guide and returns updated completed step IDs.
+ */
+export function toggleStepProgress(guideId: string, stepId: string): string[] {
+  if (!isBrowser() || !guideId || !stepId) return [];
+  const current = getGuideProgress(guideId);
+  const exists = current.includes(stepId);
+  const updated = exists ? current.filter((id) => id !== stepId) : [...current, stepId];
+
+  try {
+    localStorage.setItem(getProgressKey(guideId), JSON.stringify(updated));
+  } catch {
+    console.warn("[onboarding-guides] Failed to write progress to localStorage");
+  }
+
+  return updated;
+}
+

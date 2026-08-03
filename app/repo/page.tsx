@@ -11,6 +11,7 @@ import SaveViewButton from "./SaveViewButton";
 import SavedViewsList from "./SavedViewsList";
 import FileViewerModal from "./FileViewerModal";
 import CreateGuideModal from "./CreateGuideModal";
+import OnboardingGuideView from "./OnboardingGuideView";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
 import { type QaCodeSnippet } from "@/lib/qa";
@@ -116,8 +117,10 @@ function RepoPageInner() {
   // --- Saved views refresh key (bumped when a new view is saved) ---
   const [savedViewsRefreshKey, setSavedViewsRefreshKey] = useState(0);
 
-  // --- Onboarding guide modal state ---
+  // --- Onboarding guide modal state & refresh key ---
   const [createGuideOpen, setCreateGuideOpen] = useState(false);
+  const [onboardingGuideRefreshKey, setOnboardingGuideRefreshKey] = useState(0);
+  const questionInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo) : null;
@@ -168,6 +171,29 @@ function RepoPageInner() {
     window.history.replaceState({}, "", newUrl);
     if (graphSectionRef.current) {
       graphSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function handleApplyStepView(newMode: GraphMode, targets: string[]) {
+    setGraphMode(newMode);
+    setHighlightedFiles(targets);
+    if (repoUrl) {
+      const newUrl = buildRepoUrl(repoUrl, {
+        graphMode: newMode,
+        focusFiles: targets,
+      });
+      window.history.replaceState({}, "", newUrl);
+    }
+    if (graphSectionRef.current) {
+      graphSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function handleSelectQuestion(q: string) {
+    setQuestion(q);
+    if (questionInputRef.current) {
+      questionInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      questionInputRef.current.focus();
     }
   }
 
@@ -596,6 +622,15 @@ function RepoPageInner() {
             edgesCount={activeGraph?.edges.length ?? 0}
           />
 
+          {/* Onboarding Guide for this repo */}
+          <OnboardingGuideView
+            repoUrl={repoUrl}
+            refreshKey={onboardingGuideRefreshKey}
+            onApplyStepView={handleApplyStepView}
+            onSelectQuestion={handleSelectQuestion}
+            onCreateGuideClick={() => setCreateGuideOpen(true)}
+          />
+
           {/* Saved Views for this repo */}
           <SavedViewsList repoUrl={repoUrl} refreshKey={savedViewsRefreshKey} />
 
@@ -821,6 +856,7 @@ function RepoPageInner() {
         {/* Input box and action button */}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           <textarea
+            ref={questionInputRef}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="e.g. How is routing set up? Where are the main components located?"
@@ -1252,6 +1288,7 @@ function RepoPageInner() {
           currentFocusFiles={highlightedFiles.length > 0 ? highlightedFiles : focusFiles}
           isOpen={createGuideOpen}
           onClose={() => setCreateGuideOpen(false)}
+          onGuideSaved={() => setOnboardingGuideRefreshKey((k) => k + 1)}
         />
       )}
     </main>
