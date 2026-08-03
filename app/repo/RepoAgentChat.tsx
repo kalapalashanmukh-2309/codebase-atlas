@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { AgentAction } from "@/app/api/agent/route";
+import type { AgentAction, ChangePlan } from "@/app/api/agent/route";
 
 // ---------------------------------------------------------------------------
 // Types & Props
@@ -13,6 +13,7 @@ export interface AgentMessage {
   content: string;
   timestamp: string;
   actions?: AgentAction[];
+  changePlan?: ChangePlan;
 }
 
 interface RepoAgentChatProps {
@@ -41,7 +42,7 @@ export default function RepoAgentChat({
       id: "welcome",
       role: "assistant",
       content:
-        "Hello! I am your Autonomous Codebase Agent for this repository. Ask me to perform complex refactorings, search architecture patterns, or generate automated reports.",
+        "Hello! I am your Autonomous Codebase Agent for this repository. Ask me to perform complex refactorings, search architecture patterns, or plan a change (e.g. \"I want to add rate limiting\").",
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -55,7 +56,7 @@ export default function RepoAgentChat({
           label: "❓ Suggested questions",
           payload: {
             type: "suggestQuestions",
-            data: { questions: ["What are the core modules?", "Where is CLI handling?"] },
+            data: { questions: ["I want to add rate limiting to login", "Where is CLI handling?"] },
           },
         },
       ],
@@ -128,6 +129,7 @@ export default function RepoAgentChat({
           ? json.content
           : `Got your message: '${textToSend}'.`;
       const replyActions = Array.isArray(json.actions) ? json.actions : [];
+      const replyChangePlan = json.changePlan as ChangePlan | undefined;
 
       const botMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
@@ -138,6 +140,7 @@ export default function RepoAgentChat({
           minute: "2-digit",
         }),
         actions: replyActions,
+        changePlan: replyChangePlan,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -162,7 +165,7 @@ export default function RepoAgentChat({
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "540px",
+        height: "560px",
         borderRadius: "12px",
         background: "rgba(15, 23, 42, 0.85)",
         backdropFilter: "blur(12px)",
@@ -183,7 +186,7 @@ export default function RepoAgentChat({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-          <span style={{ fontSize: "1.2rem" }}>🤖</span>
+          <span style={{ fontSize: "1.2rem" }}>🛠️</span>
           <div>
             <h3
               style={{
@@ -194,7 +197,7 @@ export default function RepoAgentChat({
                 fontFamily: "ui-monospace, monospace",
               }}
             >
-              Repo Agent Chat
+              Repo Agent & Change Planner
             </h3>
             <span
               style={{
@@ -203,7 +206,7 @@ export default function RepoAgentChat({
                 fontFamily: "ui-monospace, monospace",
               }}
             >
-              Autonomous Agent Mode • {files.length} codebase files
+              Autonomous Change Planning • {files.length} codebase files
             </span>
           </div>
         </div>
@@ -220,7 +223,7 @@ export default function RepoAgentChat({
             fontFamily: "ui-monospace, monospace",
           }}
         >
-          READY
+          PLANNING MODE READY
         </span>
       </div>
 
@@ -249,7 +252,7 @@ export default function RepoAgentChat({
             >
               <div
                 style={{
-                  maxWidth: "85%",
+                  maxWidth: "88%",
                   padding: "0.75rem 1rem",
                   borderRadius: isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
                   background: isUser
@@ -266,6 +269,129 @@ export default function RepoAgentChat({
                 }}
               >
                 {msg.content}
+
+                {/* Structured Change Plan Card */}
+                {!isUser && msg.changePlan && (
+                  <div
+                    style={{
+                      marginTop: "0.85rem",
+                      padding: "1rem",
+                      borderRadius: "8px",
+                      background: "rgba(3, 7, 18, 0.75)",
+                      border: "1px solid rgba(251, 191, 36, 0.4)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.85rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{ fontSize: "1rem" }}>📋</span>
+                      <strong style={{ color: "#fbbf24", fontSize: "0.88rem", fontFamily: "ui-monospace, monospace" }}>
+                        Implementation Plan Summary
+                      </strong>
+                    </div>
+
+                    <p style={{ margin: 0, fontSize: "0.85rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                      {msg.changePlan.summary}
+                    </p>
+
+                    {/* Step-by-step instructions */}
+                    {msg.changePlan.steps && msg.changePlan.steps.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#38bdf8",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontFamily: "ui-monospace, monospace",
+                          }}
+                        >
+                          Step-By-Step Instructions ({msg.changePlan.steps.length})
+                        </span>
+
+                        {msg.changePlan.steps.map((step, sIdx) => (
+                          <div
+                            key={sIdx}
+                            style={{
+                              padding: "0.6rem 0.85rem",
+                              borderRadius: "6px",
+                              background: "rgba(15, 23, 42, 0.85)",
+                              border: "1px solid rgba(51, 65, 85, 0.6)",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "0.3rem",
+                            }}
+                          >
+                            <span style={{ fontSize: "0.83rem", fontWeight: 700, color: "#f8fafc" }}>
+                              {step.title}
+                            </span>
+                            <span style={{ fontSize: "0.8rem", color: "#cbd5e1", lineHeight: 1.45 }}>
+                              {step.description}
+                            </span>
+
+                            {step.files && step.files.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.2rem" }}>
+                                {step.files.map((file, fIdx) => (
+                                  <button
+                                    key={fIdx}
+                                    onClick={() => onFocusFiles && onFocusFiles([file])}
+                                    style={{
+                                      padding: "0.15rem 0.45rem",
+                                      borderRadius: "3px",
+                                      background: "rgba(56, 189, 248, 0.12)",
+                                      border: "1px solid rgba(56, 189, 248, 0.3)",
+                                      color: "#38bdf8",
+                                      fontSize: "0.72rem",
+                                      fontFamily: "ui-monospace, monospace",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    📄 {file}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Risks Section */}
+                    {msg.changePlan.risks && msg.changePlan.risks.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#fbbf24",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontFamily: "ui-monospace, monospace",
+                          }}
+                        >
+                          ⚠️ Risks & Watch Items
+                        </span>
+                        <ul
+                          style={{
+                            margin: 0,
+                            paddingLeft: "1.1rem",
+                            fontSize: "0.8rem",
+                            color: "#fef08a",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "0.2rem",
+                          }}
+                        >
+                          {msg.changePlan.risks.map((risk, rIdx) => (
+                            <li key={rIdx}>{risk}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Assistant Action Buttons */}
                 {!isUser && msg.actions && msg.actions.length > 0 && (
@@ -377,7 +503,7 @@ export default function RepoAgentChat({
               fontFamily: "ui-monospace, monospace",
             }}
           >
-            <span>⏳ Agent is processing request…</span>
+            <span>⏳ Agent is formulating change plan…</span>
           </div>
         )}
 
@@ -397,7 +523,7 @@ export default function RepoAgentChat({
       >
         <input
           type="text"
-          placeholder="Ask Agent to analyze, refactor, or suggest questions..."
+          placeholder="I want to add rate limiting to login..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
@@ -428,7 +554,7 @@ export default function RepoAgentChat({
             fontFamily: "ui-monospace, monospace",
           }}
         >
-          Send
+          Plan Change
         </button>
       </form>
     </div>

@@ -1,8 +1,9 @@
 /**
  * POST /api/agent
  *
- * Repo-aware conversational agent endpoint returning structured assistant content
- * and interactive AgentActions (focusFiles, showFunction, openDocsPage, suggestQuestions).
+ * Repo-aware conversational agent endpoint.
+ * Supports standard navigation queries AND a specialized "Plan a Change" mode
+ * that returns a structured ChangePlan (summary, step-by-step instructions, affected files, risks).
  */
 
 import {
@@ -20,10 +21,16 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 
 export type MessageRole = "user" | "assistant";
 
-export interface AgentChatMessage {
-  role: MessageRole;
-  content: string;
-  actions?: AgentAction[];
+export interface ChangePlanStep {
+  title: string;
+  description: string;
+  files: string[];
+}
+
+export interface ChangePlan {
+  summary: string;
+  steps: ChangePlanStep[];
+  risks: string[];
 }
 
 export interface AgentAction {
@@ -34,6 +41,13 @@ export interface AgentAction {
   };
 }
 
+export interface AgentChatMessage {
+  role: MessageRole;
+  content: string;
+  actions?: AgentAction[];
+  changePlan?: ChangePlan;
+}
+
 export interface AgentRequest {
   repoUrl?: string;
   messages?: AgentChatMessage[];
@@ -42,6 +56,7 @@ export interface AgentRequest {
 export interface AgentResponse {
   content: string;
   actions?: AgentAction[];
+  changePlan?: ChangePlan;
 }
 
 export const AGENT_SYSTEM_PROMPT = `You are a codebase navigator agent.
@@ -51,19 +66,47 @@ Guidelines:
 1. Be concise: Keep responses within 1–3 short paragraphs unless the user asks for more detail.
 2. Be action-oriented: Always try to suggest 1–3 concrete next actions (files to focus/open, docs to read, functions to inspect).
 3. Be honest & grounded: Use the provided repository analysis context as ground truth. If you don't know something based on the context, say so clearly instead of guessing.
-4. Be specific: Prefer referring to exact file paths (e.g. \`lib/command.js\`) and function names (e.g. \`parseArgs()\`) when possible. Avoid generic statements like "This repo is a library" unless supported by context.
-
-Supported action types (return 1–3 in the \`actions\` array):
-- focusFiles: { label: "Focus command.js", payload: { type: "focusFiles", data: { files: ["lib/command.js"] } } }
-- showFunction: { label: "Inspect parseArgs()", payload: { type: "showFunction", data: { functionName: "parseArgs" } } }
-- openDocsPage: { label: "Open Overview doc", payload: { type: "openDocsPage", data: { slug: "overview" } } }
-- suggestQuestions: { label: "Follow-up questions", payload: { type: "suggestQuestions", data: { questions: ["Where is CLI options handled?"] } } }
+4. Be specific: Prefer referring to exact file paths and function names when possible.
 
 Return a JSON object with keys:
-- content: (string answer following guidelines)
+- content: (string answer)
 - actions: (array of 1–3 action objects, or empty array [])
 
 Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
+
+export const CHANGE_PLANNER_PROMPT = `You are an expert change planning assistant for software repositories.
+You are given the repository context and a desired change or feature request from a developer.
+Provide a clear, actionable, step-by-step implementation plan.
+
+Return a JSON object with:
+- summary: 2–4 sentences describing what this change accomplishes at a high level.
+- steps: array of step objects, each with:
+    - title: short step title (e.g. "Create rate limiter middleware")
+    - description: clear implementation guidance
+    - files: array of affected file paths (e.g. ["lib/auth.ts", "middleware/rate-limit.ts"])
+- risks: array of strings (potential risks, breaking changes, or reviewer considerations)
+- content: concise overview text summarizing the plan
+
+Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
+
+/**
+ * Detects whether a user message expresses intent to plan a code change.
+ */
+function isChangePlanIntent(userText: string): boolean {
+  const lower = userText.toLowerCase().trim();
+  const patterns = [
+    "i want to",
+    "help me implement",
+    "plan how to",
+    "how to add",
+    "plan a change",
+    "how can i add",
+    "create a plan",
+    "implement rate limiting",
+    "add feature",
+  ];
+  return patterns.some((p) => lower.includes(p));
+}
 
 /**
  * Builds a compact, factual repository context summary string.
@@ -84,15 +127,6 @@ function buildAgentContextSummary(
     .map((f) => `${f.name} (${f.count} calls)`)
     .join(", ");
 
-  const topHooks = (analysis.functionCounts?.hooks || [])
-    .slice(0, 5)
-    .map((h) => `${h.name} (${h.count} calls)`)
-    .join(", ");
-
-  const docSummaries = docsPages
-    .map((d) => `"${d.slug}": ${d.title} (${d.summary.slice(0, 90)}...)`)
-    .join("\n");
-
   const funcIndexSummary = Object.entries(analysis.functionIndex || {})
     .slice(0, 8)
     .map(
@@ -107,14 +141,12 @@ Total TypeScript/JavaScript Files: ${fileCount}
 Key Modules / Folders: ${folders.join(", ") || "Root level"}
 Sample Files: ${sampleFiles.join(", ")}
 ${topFuncs ? `Top Functions: ${topFuncs}` : ""}
-${topHooks ? `Top React Hooks: ${topHooks}` : ""}
-${docSummaries ? `Living Docs Pages:\n${docSummaries}` : ""}
 ${funcIndexSummary ? `Function Index Summary:\n${funcIndexSummary}` : ""}
 ===================================`;
 }
 
 /**
- * Robustly parses LLM JSON string response.
+ * Robustly parses LLM JSON response string.
  */
 function parseAgentJsonResponse(rawText: string): AgentResponse {
   try {
@@ -131,8 +163,9 @@ function parseAgentJsonResponse(rawText: string): AgentResponse {
     const parsed = JSON.parse(cleanText.trim());
 
     return {
-      content: typeof parsed.content === "string" ? parsed.content : rawText,
+      content: typeof parsed.content === "string" ? parsed.content : typeof parsed.summary === "string" ? parsed.summary : rawText,
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+      changePlan: parsed.steps && Array.isArray(parsed.steps) ? (parsed as ChangePlan) : undefined,
     };
   } catch {
     return {
@@ -171,6 +204,8 @@ export async function POST(request: Request) {
   }
 
   const recentMessages = messages.slice(-10);
+  const lastUserMessage = recentMessages.filter((m) => m.role === "user").pop()?.content || "";
+  const isPlanningMode = isChangePlanIntent(lastUserMessage);
   const apiKey = process.env.GEMINI_API_KEY;
 
   // 1. Fetch & compute repository analysis context
@@ -196,60 +231,56 @@ export async function POST(request: Request) {
       analysis.functionIndex = buildFunctionIndexRecord(fetchedFiles);
     }
 
-    let docsPages = getDocsPagesForRepo(repoUrl);
-    if (docsPages.length === 0) {
-      docsPages = [
-        {
-          id: `doc_overview_${repoUrl}`,
-          repoUrl,
-          slug: "overview",
-          title: "Overview",
-          summary: `High-level architectural overview of ${repoUrl}, highlighting key modules and core entry points.`,
-          graphMode: "high-level",
-          suggestedQuestions: [
-            "What is the main purpose of this repo?",
-            "Where are the main entry points located?",
-            "How are core modules structured?",
-          ],
-          order: 0,
-        },
-      ];
-    }
-
+    const docsPages = getDocsPagesForRepo(repoUrl);
     contextSummary = buildAgentContextSummary(repoUrl, analysis, docsPages);
   } catch (err) {
     console.warn("[api/agent] Unable to fetch deep analysis context:", err);
   }
 
+  // 2. Offline fallback handling if no API key is configured
   if (!apiKey) {
-    const lastUserMessage = recentMessages.filter((m) => m.role === "user").pop()?.content || "";
+    if (isPlanningMode) {
+      const samplePlan: ChangePlan = {
+        summary: `Implementation plan for "${lastUserMessage}" across repository files. (Offline Mode)`,
+        steps: [
+          {
+            title: "1. Update core service module",
+            description: "Modify entry handler logic to support new request pipeline.",
+            files: ["lib/command.js", "lib/option.js"],
+          },
+          {
+            title: "2. Add middleware / validation guard",
+            description: "Enforce validation parameters and error handling bounds.",
+            files: ["lib/argument.js"],
+          },
+        ],
+        risks: [
+          "Ensure unit tests in tests/ are updated to cover new execution paths.",
+          "GEMINI_API_KEY is not configured for full dynamic AI planning.",
+        ],
+      };
 
-    const sampleActions: AgentAction[] = [
-      {
-        label: "📖 Open Overview docs",
-        payload: { type: "openDocsPage", data: { slug: "overview" } },
-      },
-      {
-        label: "❓ Suggested questions",
-        payload: {
-          type: "suggestQuestions",
-          data: { questions: ["What are the key modules?", "Where is CLI defined?"] },
-        },
-      },
-    ];
+      return Response.json({
+        content: samplePlan.summary,
+        changePlan: samplePlan,
+        actions: [],
+      } satisfies AgentResponse);
+    }
 
     return Response.json({
       content: `[Agent Response] Answer to "${lastUserMessage}" based on repository structure.\n\n${contextSummary.slice(0, 250)}...`,
-      actions: sampleActions,
+      actions: [],
     } satisfies AgentResponse);
   }
 
+  // 3. Call Gemini LLM with intent-specific prompt
+  const activeSystemPrompt = isPlanningMode ? CHANGE_PLANNER_PROMPT : AGENT_SYSTEM_PROMPT;
   const contents = recentMessages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
 
-  const systemInstruction = `${AGENT_SYSTEM_PROMPT}\n\n${contextSummary}`;
+  const systemInstruction = `${activeSystemPrompt}\n\n${contextSummary}`;
 
   try {
     const res = await fetch(
@@ -264,7 +295,7 @@ export async function POST(request: Request) {
           contents,
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 1500,
+            maxOutputTokens: 2000,
             response_mime_type: "application/json",
           },
         }),
@@ -278,8 +309,7 @@ export async function POST(request: Request) {
 
     const json = await res.json();
     const rawText =
-      json.candidates?.[0]?.content?.parts?.[0]?.text ||
-      '{"content": "I am unable to answer right now.", "actions": []}';
+      json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
     const parsedResponse = parseAgentJsonResponse(rawText);
 
