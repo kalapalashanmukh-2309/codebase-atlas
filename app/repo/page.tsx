@@ -16,6 +16,7 @@ import RepoDocsList from "./RepoDocsList";
 import DocsPageViewModal from "./DocsPageViewModal";
 import TopFunctionsPanel from "./TopFunctionsPanel";
 import FunctionDetailModal from "./FunctionDetailModal";
+import Graph3D from "./Graph3D";
 import { getDocsPagesForRepo, type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -129,6 +130,9 @@ function RepoPageInner() {
 
   // --- Graph Mode state ("high-level" | "detailed") ---
   const [graphMode, setGraphMode] = useState<GraphMode>(urlGraphMode);
+
+  // --- Dimension Mode state ("2D" | "3D") ---
+  const [dimensionMode, setDimensionMode] = useState<"2D" | "3D">("2D");
 
   // --- Saved views refresh key (bumped when a new view is saved) ---
   const [savedViewsRefreshKey, setSavedViewsRefreshKey] = useState(0);
@@ -870,56 +874,124 @@ function RepoPageInner() {
                       Dependency Graph
                     </h2>
 
-                    {/* Mode Toggle */}
-                    <div
-                      style={{
-                        display: "flex",
-                        background: "#1e293b",
-                        padding: "0.25rem",
-                        borderRadius: "6px",
-                        border: "1px solid #334155",
-                      }}
-                    >
-                      <button
-                        onClick={() => handleModeToggle("high-level")}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                      {/* 2D / 3D Dimension Toggle */}
+                      <div
                         style={{
-                          padding: "0.35rem 0.85rem",
-                          borderRadius: "4px",
-                          border: "none",
-                          background: graphMode === "high-level" ? "#2563eb" : "transparent",
-                          color: graphMode === "high-level" ? "#ffffff" : "#94a3b8",
-                          fontSize: "0.85rem",
-                          fontWeight: 600,
-                          cursor: "pointer",
+                          display: "flex",
+                          background: "#1e293b",
+                          padding: "0.25rem",
+                          borderRadius: "6px",
+                          border: "1px solid #334155",
+                          gap: "0.25rem",
                         }}
                       >
-                        High-level
-                      </button>
-                      <button
-                        onClick={() => handleModeToggle("detailed")}
+                        <button
+                          onClick={() => setDimensionMode("2D")}
+                          style={{
+                            padding: "0.35rem 0.75rem",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: dimensionMode === "2D" ? "#38bdf8" : "transparent",
+                            color: dimensionMode === "2D" ? "#0f172a" : "#94a3b8",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "ui-monospace, monospace",
+                            transition: "background 0.2s, color 0.2s",
+                          }}
+                        >
+                          2D
+                        </button>
+                        <button
+                          onClick={() => setDimensionMode("3D")}
+                          style={{
+                            padding: "0.35rem 0.75rem",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: dimensionMode === "3D" ? "#38bdf8" : "transparent",
+                            color: dimensionMode === "3D" ? "#0f172a" : "#94a3b8",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "ui-monospace, monospace",
+                            transition: "background 0.2s, color 0.2s",
+                          }}
+                        >
+                          3D
+                        </button>
+                      </div>
+
+                      {/* Mode Toggle (high-level / detailed) */}
+                      <div
                         style={{
-                          padding: "0.35rem 0.85rem",
-                          borderRadius: "4px",
-                          border: "none",
-                          background: graphMode === "detailed" ? "#2563eb" : "transparent",
-                          color: graphMode === "detailed" ? "#ffffff" : "#94a3b8",
-                          fontSize: "0.85rem",
-                          fontWeight: 600,
-                          cursor: "pointer",
+                          display: "flex",
+                          background: "#1e293b",
+                          padding: "0.25rem",
+                          borderRadius: "6px",
+                          border: "1px solid #334155",
+                          gap: "0.25rem",
                         }}
                       >
-                        Detailed
-                      </button>
+                        <button
+                          onClick={() => setGraphMode("high-level")}
+                          style={{
+                            padding: "0.35rem 0.75rem",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: graphMode === "high-level" ? "#38bdf8" : "transparent",
+                            color: graphMode === "high-level" ? "#0f172a" : "#94a3b8",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "ui-monospace, monospace",
+                            transition: "background 0.2s, color 0.2s",
+                          }}
+                        >
+                          High-Level
+                        </button>
+                        <button
+                          onClick={() => setGraphMode("detailed")}
+                          style={{
+                            padding: "0.35rem 0.75rem",
+                            borderRadius: "4px",
+                            border: "none",
+                            background: graphMode === "detailed" ? "#38bdf8" : "transparent",
+                            color: graphMode === "detailed" ? "#0f172a" : "#94a3b8",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "ui-monospace, monospace",
+                            transition: "background 0.2s, color 0.2s",
+                          }}
+                        >
+                          Detailed
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <GraphExplanation />
-                  <RepoGraph
-                    nodes={activeGraph.nodes}
-                    edges={activeGraph.edges}
-                    focusFile={focusFile}
-                    highlightedFiles={highlightedFiles}
-                  />
+                  {dimensionMode === "3D" ? (
+                    <Graph3D
+                      nodes={activeGraph.nodes}
+                      edges={activeGraph.edges}
+                      highlightedFiles={highlightedFiles.length > 0 ? highlightedFiles : focusFiles}
+                      onNodeClick={(nodeId, type) => {
+                        if (type === "file") {
+                          setViewModalFile(nodeId);
+                        }
+                      }}
+                      onFallbackTo2D={() => setDimensionMode("2D")}
+                    />
+                  ) : (
+                    <RepoGraph
+                      nodes={activeGraph.nodes}
+                      edges={activeGraph.edges}
+                      focusFile={focusFile}
+                      highlightedFiles={highlightedFiles}
+                    />
+                  )}
                 </div>
               )}
             </>
