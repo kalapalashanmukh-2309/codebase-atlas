@@ -28,6 +28,10 @@ export interface AnalyzeResult {
   noSupportedFiles: boolean;
   repoGuide: RepoGuide;
   monorepoInfo: MonorepoInfo;
+  functionCounts?: {
+    allFunctions: { name: string; count: number; files: string[] }[];
+    hooks?: { name: string; count: number; files: string[] }[];
+  };
 }
 
 /** Shape of a single item returned by the GitHub Git Trees API. */

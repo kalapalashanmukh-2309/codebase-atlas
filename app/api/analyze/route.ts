@@ -9,8 +9,10 @@ import {
   parseGitHubUrl,
   fetchRepoTree,
   buildAnalyzeResult,
+  fetchFileContent,
 } from "@/lib/github";
 import { generateOverview } from "@/lib/overview";
+import { countFunctionCalls } from "@/lib/ast-counts";
 
 export async function POST(request: Request) {
   let body: { repoUrl?: string };
@@ -43,11 +45,26 @@ export async function POST(request: Request) {
     // 3. Build the analysis result (TS files + graph)
     const result = buildAnalyzeResult(tree);
 
-    // 4. Generate an AI overview (single LLM call, falls back gracefully)
+    // 4. Concurrently fetch content for sample files to calculate function/hook counts
+    const sampleFiles = result.files.slice(0, 15);
+    const snippetPromises = sampleFiles.map(async (filePath) => {
+      const content = await fetchFileContent(owner, repo, filePath, 4000);
+      return content ? { path: filePath, content } : null;
+    });
+
+    const snippetResults = await Promise.all(snippetPromises);
+    const fetchedFiles = snippetResults.filter(
+      (s): s is { path: string; content: string } => s !== null
+    );
+
+    if (fetchedFiles.length > 0) {
+      result.functionCounts = countFunctionCalls(fetchedFiles);
+    }
+
+    // 5. Generate an AI overview (single LLM call, falls back gracefully)
     const folders = result.graph.nodes
       .filter((n) => n.type === "folder")
       .map((n) => n.label);
-    const sampleFiles = result.files.slice(0, 20);
 
     result.overview = await generateOverview({
       repoUrl,
