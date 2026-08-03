@@ -38,6 +38,7 @@ export default function OnboardingGuideView({
 }: OnboardingGuideViewProps) {
   const [guide, setGuide] = useState<OnboardingGuide | null>(null);
   const [completedStepIds, setCompletedStepIds] = useState<string[]>([]);
+  const [lastOpenedAt, setLastOpenedAt] = useState<number | null>(null);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -45,9 +46,16 @@ export default function OnboardingGuideView({
     setGuide(g);
     if (g) {
       const mission = getMissionProgress(repoUrl, g.id);
-      setCompletedStepIds(mission ? mission.completedSteps : getGuideProgress(g.id));
+      if (mission) {
+        setCompletedStepIds(mission.completedSteps);
+        setLastOpenedAt(mission.lastOpenedAt || null);
+      } else {
+        setCompletedStepIds(getGuideProgress(g.id));
+        setLastOpenedAt(null);
+      }
     } else {
       setCompletedStepIds([]);
+      setLastOpenedAt(null);
     }
   }, [repoUrl]);
 
@@ -112,6 +120,7 @@ export default function OnboardingGuideView({
     setStepCompleted(repoUrl, guide.id, stepId, !isDone);
     const mission = getMissionProgress(repoUrl, guide.id);
     setCompletedStepIds(mission ? mission.completedSteps : []);
+    setLastOpenedAt(mission?.lastOpenedAt || Date.now());
   }
 
   function handleDeleteGuide() {
@@ -222,7 +231,14 @@ export default function OnboardingGuideView({
               fontFamily: "ui-monospace, monospace",
             }}
           >
-            <span style={{ color: "#94a3b8" }}>Onboarding Progress</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <span style={{ color: "#94a3b8" }}>Onboarding Progress</span>
+              {lastOpenedAt && (
+                <span style={{ fontSize: "0.72rem", color: "#64748b" }}>
+                  • Last opened {new Date(lastOpenedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
             <span
               style={{
                 fontWeight: 600,
