@@ -2,63 +2,45 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getSavedViews, deleteView, type SavedView } from "@/lib/saved-views";
+import {
+  getOnboardingGuides,
+  getGuideProgress,
+  deleteGuide,
+  type OnboardingGuide,
+} from "@/lib/onboarding-guides";
 import { buildRepoUrl } from "@/lib/url-builder";
 import { formatRepoName } from "@/lib/recent-analyses";
 
 /**
- * /saved — Displays all saved views across all repositories, grouped by repoUrl.
+ * /onboarding — Displays all onboarding guides across all repositories, grouped by repoUrl.
  */
-export default function SavedViewsPage() {
-  const [views, setViews] = useState<SavedView[]>([]);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+export default function OnboardingGuidesPage() {
+  const [guides, setGuides] = useState<OnboardingGuide[]>([]);
   const [deletedId, setDeletedId] = useState<string | null>(null);
 
   useEffect(() => {
-    setViews(getSavedViews());
+    setGuides(getOnboardingGuides());
   }, []);
 
   function handleDelete(id: string) {
     setDeletedId(id);
     setTimeout(() => {
-      deleteView(id);
+      deleteGuide(id);
       setDeletedId(null);
-      setViews(getSavedViews());
+      setGuides(getOnboardingGuides());
     }, 300);
   }
 
-  function handleOpen(view: SavedView) {
-    const url = buildRepoUrl(view.repoUrl, {
-      graphMode: view.graphMode,
-      focusFiles: view.focusFiles,
-    });
-    window.location.href = url;
+  function handleOpen(repoUrl: string) {
+    window.location.href = buildRepoUrl(repoUrl);
   }
 
-  function handleCopyLink(view: SavedView) {
-    const url = buildRepoUrl(view.repoUrl, {
-      graphMode: view.graphMode,
-      focusFiles: view.focusFiles,
-    });
-    const fullUrl = `${window.location.origin}${url}`;
-
-    navigator.clipboard.writeText(fullUrl).then(
-      () => {
-        setCopiedId(view.id);
-        setTimeout(() => setCopiedId(null), 1500);
-      },
-      () => {
-        window.prompt("Copy this link:", fullUrl);
-      }
-    );
-  }
-
-  // Group saved views by repoUrl
-  const grouped = views.reduce<Record<string, SavedView[]>>((acc, view) => {
-    if (!acc[view.repoUrl]) {
-      acc[view.repoUrl] = [];
+  // Group guides by repoUrl
+  const grouped = guides.reduce<Record<string, OnboardingGuide[]>>((acc, guide) => {
+    if (!acc[guide.repoUrl]) {
+      acc[guide.repoUrl] = [];
     }
-    acc[view.repoUrl].push(view);
+    acc[guide.repoUrl].push(guide);
     return acc;
   }, {});
 
@@ -103,10 +85,10 @@ export default function SavedViewsPage() {
           <Link
             href="/onboarding"
             style={{
-              color: "#94a3b8",
+              color: "#38bdf8",
               textDecoration: "none",
               fontSize: "0.9rem",
-              fontWeight: 500,
+              fontWeight: 600,
             }}
           >
             🗺️ Onboarding
@@ -114,10 +96,10 @@ export default function SavedViewsPage() {
           <Link
             href="/saved"
             style={{
-              color: "#38bdf8",
+              color: "#94a3b8",
               textDecoration: "none",
               fontSize: "0.9rem",
-              fontWeight: 600,
+              fontWeight: 500,
             }}
           >
             📌 Saved Views
@@ -136,7 +118,7 @@ export default function SavedViewsPage() {
         </div>
       </nav>
 
-      {/* Title section */}
+      {/* Page Title */}
       <div>
         <h1
           style={{
@@ -146,7 +128,7 @@ export default function SavedViewsPage() {
             color: "#f8fafc",
           }}
         >
-          Saved Views
+          Onboarding Guides
         </h1>
         <p
           style={{
@@ -156,7 +138,7 @@ export default function SavedViewsPage() {
             lineHeight: 1.5,
           }}
         >
-          Your collection of saved architecture views, flows, and subgraphs across repositories.
+          Curated step-by-step walkthroughs, key file focus views, and questions for repository onboarding.
         </p>
       </div>
 
@@ -175,12 +157,12 @@ export default function SavedViewsPage() {
             gap: "1rem",
           }}
         >
-          <span style={{ fontSize: "2.5rem" }}>📌</span>
+          <span style={{ fontSize: "2.5rem" }}>🗺️</span>
           <h2 style={{ fontSize: "1.2rem", fontWeight: 600, margin: 0, color: "#e2e8f0" }}>
-            No Saved Views Yet
+            No Onboarding Guides Yet
           </h2>
           <p style={{ color: "#94a3b8", maxWidth: "28rem", margin: 0, fontSize: "0.9rem", lineHeight: 1.6 }}>
-            When viewing any repository graph, click the <strong>&quot;Save this view&quot;</strong> button in the header to bookmark custom focus states and architectural flows.
+            When viewing any repository graph, click the <strong>&quot;🗺️ Create guide&quot;</strong> button in the header to build interactive onboarding steps for your team.
           </p>
           <Link
             href="/"
@@ -202,7 +184,7 @@ export default function SavedViewsPage() {
         /* Repository Groups */
         <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
           {repoUrls.map((repoUrl) => {
-            const repoViews = grouped[repoUrl];
+            const repoGuides = grouped[repoUrl];
             const repoName = formatRepoName(repoUrl);
 
             return (
@@ -220,7 +202,7 @@ export default function SavedViewsPage() {
                   gap: "1rem",
                 }}
               >
-                {/* Repo Group Header */}
+                {/* Repo Header */}
                 <div
                   style={{
                     display: "flex",
@@ -257,7 +239,7 @@ export default function SavedViewsPage() {
                         fontWeight: 600,
                       }}
                     >
-                      {repoViews.length} view{repoViews.length > 1 ? "s" : ""}
+                      {repoGuides.length} guide{repoGuides.length > 1 ? "s" : ""}
                     </span>
                   </div>
 
@@ -273,26 +255,30 @@ export default function SavedViewsPage() {
                   </span>
                 </div>
 
-                {/* Saved View Items */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-                  {repoViews.map((view) => {
-                    const isDeleting = deletedId === view.id;
-                    const date = new Date(view.createdAt);
+                {/* Guide Cards */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {repoGuides.map((guide) => {
+                    const isDeleting = deletedId === guide.id;
+                    const date = new Date(guide.createdAt);
                     const dateStr = date.toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                       year: "numeric",
                     });
 
+                    const completedProgress = getGuideProgress(guide.id);
+                    const completedCount = completedProgress.length;
+                    const totalSteps = guide.steps.length;
+
                     return (
                       <div
-                        key={view.id}
+                        key={guide.id}
                         style={{
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
                           gap: "1rem",
-                          padding: "0.75rem 1rem",
+                          padding: "0.85rem 1.1rem",
                           borderRadius: "8px",
                           background: "rgba(3, 7, 18, 0.75)",
                           border: "1px solid rgba(51, 65, 85, 0.5)",
@@ -300,68 +286,68 @@ export default function SavedViewsPage() {
                           transition: "opacity 0.3s, border-color 0.2s",
                         }}
                       >
-                        {/* Info Column */}
+                        {/* Left Info */}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
                               display: "flex",
                               alignItems: "center",
-                              gap: "0.5rem",
+                              gap: "0.6rem",
                               flexWrap: "wrap",
                             }}
                           >
                             <span
                               style={{
-                                fontWeight: 600,
+                                fontWeight: 700,
                                 color: "#f1f5f9",
-                                fontSize: "0.92rem",
+                                fontSize: "0.95rem",
                                 fontFamily: "ui-monospace, monospace",
                               }}
                             >
-                              {view.title}
+                              {guide.name}
                             </span>
 
-                            {/* Graph mode badge */}
+                            {/* Total Steps Badge */}
                             <span
                               style={{
-                                fontSize: "0.65rem",
+                                fontSize: "0.68rem",
                                 padding: "0.1rem 0.4rem",
                                 borderRadius: "4px",
-                                fontWeight: 700,
+                                fontWeight: 600,
                                 fontFamily: "ui-monospace, monospace",
-                                textTransform: "uppercase",
-                                letterSpacing: "0.04em",
-                                background:
-                                  view.graphMode === "detailed"
-                                    ? "rgba(52, 211, 153, 0.12)"
-                                    : "rgba(99, 102, 241, 0.12)",
-                                color:
-                                  view.graphMode === "detailed" ? "#34d399" : "#818cf8",
-                                border: `1px solid ${
-                                  view.graphMode === "detailed"
-                                    ? "rgba(52, 211, 153, 0.3)"
-                                    : "rgba(99, 102, 241, 0.3)"
-                                }`,
+                                background: "rgba(99, 102, 241, 0.12)",
+                                color: "#818cf8",
+                                border: "1px solid rgba(99, 102, 241, 0.3)",
                               }}
                             >
-                              {view.graphMode}
+                              {totalSteps} step{totalSteps > 1 ? "s" : ""}
                             </span>
 
-                            {/* Focus files badge */}
-                            {view.focusFiles && view.focusFiles.length > 0 && (
+                            {/* Progress Badge */}
+                            {completedCount > 0 && (
                               <span
                                 style={{
-                                  fontSize: "0.65rem",
+                                  fontSize: "0.68rem",
                                   padding: "0.1rem 0.4rem",
                                   borderRadius: "4px",
+                                  fontWeight: 600,
                                   fontFamily: "ui-monospace, monospace",
-                                  background: "rgba(251, 191, 36, 0.1)",
-                                  border: "1px solid rgba(251, 191, 36, 0.25)",
-                                  color: "#fbbf24",
+                                  background:
+                                    completedCount === totalSteps
+                                      ? "rgba(52, 211, 153, 0.15)"
+                                      : "rgba(56, 189, 248, 0.12)",
+                                  color:
+                                    completedCount === totalSteps
+                                      ? "#34d399"
+                                      : "#38bdf8",
+                                  border: `1px solid ${
+                                    completedCount === totalSteps
+                                      ? "rgba(52, 211, 153, 0.35)"
+                                      : "rgba(56, 189, 248, 0.3)"
+                                  }`,
                                 }}
                               >
-                                {view.focusFiles.length} file
-                                {view.focusFiles.length > 1 ? "s" : ""} focused
+                                {completedCount}/{totalSteps} done
                               </span>
                             )}
 
@@ -377,22 +363,36 @@ export default function SavedViewsPage() {
                             </span>
                           </div>
 
-                          {/* Description */}
-                          {view.description && (
-                            <p
-                              style={{
-                                margin: "0.35rem 0 0",
-                                fontSize: "0.82rem",
-                                color: "#94a3b8",
-                                lineHeight: 1.4,
-                              }}
-                            >
-                              {view.description}
-                            </p>
-                          )}
+                          {/* Step Titles preview */}
+                          <div
+                            style={{
+                              marginTop: "0.4rem",
+                              fontSize: "0.8rem",
+                              color: "#94a3b8",
+                              display: "flex",
+                              gap: "0.4rem",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {guide.steps.map((s, idx) => (
+                              <span
+                                key={s.id || idx}
+                                style={{
+                                  padding: "0.1rem 0.35rem",
+                                  borderRadius: "3px",
+                                  background: "rgba(15, 23, 42, 0.8)",
+                                  border: "1px solid rgba(51, 65, 85, 0.4)",
+                                  fontSize: "0.72rem",
+                                  fontFamily: "ui-monospace, monospace",
+                                }}
+                              >
+                                {idx + 1}. {s.title}
+                              </span>
+                            ))}
+                          </div>
                         </div>
 
-                        {/* Action buttons */}
+                        {/* Actions */}
                         <div
                           style={{
                             display: "flex",
@@ -402,9 +402,9 @@ export default function SavedViewsPage() {
                           }}
                         >
                           <button
-                            onClick={() => handleOpen(view)}
+                            onClick={() => handleOpen(guide.repoUrl)}
                             style={{
-                              padding: "0.4rem 0.75rem",
+                              padding: "0.4rem 0.8rem",
                               borderRadius: "6px",
                               border: "1px solid rgba(56, 189, 248, 0.35)",
                               background: "rgba(56, 189, 248, 0.12)",
@@ -428,59 +428,12 @@ export default function SavedViewsPage() {
                                 "rgba(56, 189, 248, 0.35)";
                             }}
                           >
-                            ▶ Open
+                            ▶ Open Guide
                           </button>
 
-                          {copiedId === view.id ? (
-                            <span
-                              style={{
-                                padding: "0.4rem 0.6rem",
-                                borderRadius: "6px",
-                                background: "rgba(52, 211, 153, 0.12)",
-                                border: "1px solid rgba(52, 211, 153, 0.35)",
-                                color: "#34d399",
-                                fontSize: "0.76rem",
-                                fontWeight: 600,
-                                fontFamily: "ui-monospace, monospace",
-                              }}
-                            >
-                              ✓ Copied
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleCopyLink(view)}
-                              title="Copy shareable permalink"
-                              style={{
-                                padding: "0.4rem 0.6rem",
-                                borderRadius: "6px",
-                                border: "1px solid rgba(51, 65, 85, 0.5)",
-                                background: "transparent",
-                                color: "#94a3b8",
-                                fontSize: "0.82rem",
-                                cursor: "pointer",
-                                fontFamily: "ui-monospace, monospace",
-                                transition: "color 0.2s, border-color 0.2s",
-                              }}
-                              onMouseOver={(e) => {
-                                (e.currentTarget as HTMLButtonElement).style.color =
-                                  "#38bdf8";
-                                (e.currentTarget as HTMLButtonElement).style.borderColor =
-                                  "rgba(56, 189, 248, 0.4)";
-                              }}
-                              onMouseOut={(e) => {
-                                (e.currentTarget as HTMLButtonElement).style.color =
-                                  "#94a3b8";
-                                (e.currentTarget as HTMLButtonElement).style.borderColor =
-                                  "rgba(51, 65, 85, 0.5)";
-                              }}
-                            >
-                              🔗
-                            </button>
-                          )}
-
                           <button
-                            onClick={() => handleDelete(view.id)}
-                            title="Delete this saved view"
+                            onClick={() => handleDelete(guide.id)}
+                            title="Delete this onboarding guide"
                             style={{
                               padding: "0.4rem 0.6rem",
                               borderRadius: "6px",

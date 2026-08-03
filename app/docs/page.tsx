@@ -70,12 +70,23 @@ export default function DocsPage() {
         </Link>
         <div style={{ display: "flex", gap: "1.25rem", alignItems: "center" }}>
           <Link
-            href="/saved"
+            href="/onboarding"
             style={{
               color: "#38bdf8",
               textDecoration: "none",
               fontSize: "0.9rem",
               fontWeight: 600,
+            }}
+          >
+            🗺️ Onboarding
+          </Link>
+          <Link
+            href="/saved"
+            style={{
+              color: "#94a3b8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 500,
             }}
           >
             📌 Saved Views

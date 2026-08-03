@@ -67,12 +67,23 @@ export default function HomePage() {
         }}
       >
         <Link
-          href="/saved"
+          href="/onboarding"
           style={{
             color: "#38bdf8",
             textDecoration: "none",
             fontSize: "0.95rem",
             fontWeight: 600,
+          }}
+        >
+          🗺️ Onboarding
+        </Link>
+        <Link
+          href="/saved"
+          style={{
+            color: "#94a3b8",
+            textDecoration: "none",
+            fontSize: "0.95rem",
+            fontWeight: 500,
           }}
         >
           📌 Saved Views
