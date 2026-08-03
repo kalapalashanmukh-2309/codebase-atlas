@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import type { AgentAction } from "@/app/api/agent/route";
 
 // ---------------------------------------------------------------------------
 // Types & Props
@@ -11,11 +12,16 @@ export interface AgentMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  actions?: AgentAction[];
 }
 
 interface RepoAgentChatProps {
   repoUrl: string;
   files: string[];
+  onFocusFiles?: (files: string[]) => void;
+  onShowFunction?: (functionName: string) => void;
+  onOpenDocsPage?: (slug: string) => void;
+  onSelectQuestion?: (question: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -25,6 +31,10 @@ interface RepoAgentChatProps {
 export default function RepoAgentChat({
   repoUrl,
   files,
+  onFocusFiles,
+  onShowFunction,
+  onOpenDocsPage,
+  onSelectQuestion,
 }: RepoAgentChatProps) {
   const [messages, setMessages] = useState<AgentMessage[]>([
     {
@@ -36,6 +46,19 @@ export default function RepoAgentChat({
         hour: "2-digit",
         minute: "2-digit",
       }),
+      actions: [
+        {
+          label: "📖 Open Overview docs",
+          payload: { type: "openDocsPage", data: { slug: "overview" } },
+        },
+        {
+          label: "❓ Suggested questions",
+          payload: {
+            type: "suggestQuestions",
+            data: { questions: ["What are the core modules?", "Where is CLI handling?"] },
+          },
+        },
+      ],
     },
   ]);
   const [input, setInput] = useState("");
@@ -46,15 +69,35 @@ export default function RepoAgentChat({
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
 
-  async function handleSend(e?: React.FormEvent) {
-    if (e) e.preventDefault();
-    if (!input.trim() || sending) return;
+  function handleActionClick(action: AgentAction) {
+    const { type, data } = action.payload;
 
-    const userText = input.trim();
+    if (type === "focusFiles" && onFocusFiles) {
+      const fileList = Array.isArray(data?.files) ? data.files : typeof data === "string" ? [data] : [];
+      if (fileList.length > 0) onFocusFiles(fileList);
+    } else if (type === "showFunction" && onShowFunction) {
+      const fn = data?.functionName || data?.name || data;
+      if (typeof fn === "string" && fn) onShowFunction(fn);
+    } else if (type === "openDocsPage" && onOpenDocsPage) {
+      const slug = data?.slug || data;
+      if (typeof slug === "string" && slug) onOpenDocsPage(slug);
+    } else if (type === "suggestQuestions") {
+      const questions = Array.isArray(data?.questions) ? data.questions : Array.isArray(data) ? data : [];
+      if (questions.length > 0 && onSelectQuestion) {
+        onSelectQuestion(questions[0]);
+      }
+    }
+  }
+
+  async function handleSend(e?: React.FormEvent, customQuery?: string) {
+    if (e) e.preventDefault();
+    const textToSend = customQuery || input.trim();
+    if (!textToSend || sending) return;
+
     const userMsg: AgentMessage = {
       id: Date.now().toString(),
       role: "user",
-      content: userText,
+      content: textToSend,
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -63,7 +106,7 @@ export default function RepoAgentChat({
 
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
-    setInput("");
+    if (!customQuery) setInput("");
     setSending(true);
 
     try {
@@ -83,7 +126,8 @@ export default function RepoAgentChat({
       const replyText =
         res.ok && json.content
           ? json.content
-          : `Got your message: '${userText}'.`;
+          : `Got your message: '${textToSend}'.`;
+      const replyActions = Array.isArray(json.actions) ? json.actions : [];
 
       const botMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
@@ -93,6 +137,7 @@ export default function RepoAgentChat({
           hour: "2-digit",
           minute: "2-digit",
         }),
+        actions: replyActions,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -100,7 +145,7 @@ export default function RepoAgentChat({
       const botMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: `Got your message: '${userText}'.`,
+        content: `Got your message: '${textToSend}'.`,
         timestamp: new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
@@ -117,7 +162,7 @@ export default function RepoAgentChat({
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "520px",
+        height: "540px",
         borderRadius: "12px",
         background: "rgba(15, 23, 42, 0.85)",
         backdropFilter: "blur(12px)",
@@ -187,7 +232,7 @@ export default function RepoAgentChat({
           overflowY: "auto",
           display: "flex",
           flexDirection: "column",
-          gap: "1rem",
+          gap: "1.1rem",
         }}
       >
         {messages.map((msg) => {
@@ -199,12 +244,12 @@ export default function RepoAgentChat({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: isUser ? "flex-end" : "flex-start",
-                gap: "0.25rem",
+                gap: "0.3rem",
               }}
             >
               <div
                 style={{
-                  maxWidth: "82%",
+                  maxWidth: "85%",
                   padding: "0.75rem 1rem",
                   borderRadius: isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
                   background: isUser
@@ -221,7 +266,91 @@ export default function RepoAgentChat({
                 }}
               >
                 {msg.content}
+
+                {/* Assistant Action Buttons */}
+                {!isUser && msg.actions && msg.actions.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.4rem",
+                      marginTop: "0.6rem",
+                      paddingTop: "0.5rem",
+                      borderTop: "1px solid rgba(51, 65, 85, 0.5)",
+                    }}
+                  >
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                      {msg.actions.map((act, aIdx) => {
+                        if (act.payload.type === "suggestQuestions") {
+                          const qList: string[] = Array.isArray(act.payload.data?.questions)
+                            ? act.payload.data.questions
+                            : Array.isArray(act.payload.data)
+                            ? act.payload.data
+                            : [];
+
+                          return (
+                            <div key={aIdx} style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", width: "100%" }}>
+                              {qList.map((qText, qIdx) => (
+                                <button
+                                  key={qIdx}
+                                  onClick={() => handleSend(undefined, qText)}
+                                  style={{
+                                    padding: "0.35rem 0.65rem",
+                                    borderRadius: "5px",
+                                    background: "rgba(251, 191, 36, 0.12)",
+                                    border: "1px solid rgba(251, 191, 36, 0.35)",
+                                    color: "#fbbf24",
+                                    fontSize: "0.78rem",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    fontFamily: "ui-monospace, monospace",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  ❓ {qText}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <button
+                            key={aIdx}
+                            onClick={() => handleActionClick(act)}
+                            style={{
+                              padding: "0.35rem 0.75rem",
+                              borderRadius: "5px",
+                              background: "rgba(251, 191, 36, 0.15)",
+                              border: "1px solid rgba(251, 191, 36, 0.4)",
+                              color: "#fbbf24",
+                              fontSize: "0.78rem",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontFamily: "ui-monospace, monospace",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                              transition: "background 0.2s, border-color 0.2s",
+                            }}
+                            onMouseOver={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.background =
+                                "rgba(251, 191, 36, 0.3)";
+                            }}
+                            onMouseOut={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.background =
+                                "rgba(251, 191, 36, 0.15)";
+                            }}
+                          >
+                            ⚡ {act.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
+
               <span
                 style={{
                   fontSize: "0.68rem",
@@ -268,7 +397,7 @@ export default function RepoAgentChat({
       >
         <input
           type="text"
-          placeholder="Ask Agent to analyze or refactor..."
+          placeholder="Ask Agent to analyze, refactor, or suggest questions..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}

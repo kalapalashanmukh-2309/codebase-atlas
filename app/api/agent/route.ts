@@ -1,9 +1,8 @@
 /**
  * POST /api/agent
  *
- * Repo-aware conversational agent endpoint.
- * Loads repository structure, function counts, docs pages, and function index
- * to return grounded AI responses to user messages.
+ * Repo-aware conversational agent endpoint returning structured assistant content
+ * and interactive AgentActions (focusFiles, showFunction, openDocsPage, suggestQuestions).
  */
 
 import {
@@ -24,6 +23,15 @@ export type MessageRole = "user" | "assistant";
 export interface AgentChatMessage {
   role: MessageRole;
   content: string;
+  actions?: AgentAction[];
+}
+
+export interface AgentAction {
+  label: string;
+  payload: {
+    type: "focusFiles" | "showFunction" | "openDocsPage" | "suggestQuestions";
+    data: any;
+  };
 }
 
 export interface AgentRequest {
@@ -33,10 +41,24 @@ export interface AgentRequest {
 
 export interface AgentResponse {
   content: string;
-  actions?: any[];
+  actions?: AgentAction[];
 }
 
-export const AGENT_SYSTEM_PROMPT = `You are a codebase navigator agent. You help developers understand a specific GitHub repository. You are given the repo URL, a summary of its structure, and a conversation. Answer clearly and concisely. If you don't know something, say so.`;
+export const AGENT_SYSTEM_PROMPT = `You are a codebase navigator agent. You help developers understand a specific GitHub repository.
+You are given the repo URL, a summary of its structure, and a conversation. Answer clearly and concisely.
+
+When relevant, suggest 1–3 interactive UI actions in the actions array to help the developer explore the repo.
+Supported action types:
+1. focusFiles: { label: "Focus auth files", payload: { type: "focusFiles", data: { files: ["lib/auth.ts"] } } }
+2. showFunction: { label: "Show parseArgs function", payload: { type: "showFunction", data: { functionName: "parseArgs" } } }
+3. openDocsPage: { label: "Open Overview docs", payload: { type: "openDocsPage", data: { slug: "overview" } } }
+4. suggestQuestions: { label: "Follow-up questions", payload: { type: "suggestQuestions", data: { questions: ["How does option parsing work?", "Where is CLI defined?"] } } }
+
+Return a JSON object with keys:
+- content: (string answer grounded in the repo context)
+- actions: (array of action objects, or empty array [])
+
+Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
 
 /**
  * Builds a compact, factual repository context summary string.
@@ -84,6 +106,35 @@ ${topHooks ? `Top React Hooks: ${topHooks}` : ""}
 ${docSummaries ? `Living Docs Pages:\n${docSummaries}` : ""}
 ${funcIndexSummary ? `Function Index Summary:\n${funcIndexSummary}` : ""}
 ===================================`;
+}
+
+/**
+ * Robustly parses LLM JSON string response.
+ */
+function parseAgentJsonResponse(rawText: string): AgentResponse {
+  try {
+    let cleanText = rawText.trim();
+    if (cleanText.startsWith("```json")) {
+      cleanText = cleanText.slice(7);
+    } else if (cleanText.startsWith("```")) {
+      cleanText = cleanText.slice(3);
+    }
+    if (cleanText.endsWith("```")) {
+      cleanText = cleanText.slice(0, -3);
+    }
+
+    const parsed = JSON.parse(cleanText.trim());
+
+    return {
+      content: typeof parsed.content === "string" ? parsed.content : rawText,
+      actions: Array.isArray(parsed.actions) ? parsed.actions : [],
+    };
+  } catch {
+    return {
+      content: rawText,
+      actions: [],
+    };
+  }
 }
 
 export async function POST(request: Request) {
@@ -167,9 +218,24 @@ export async function POST(request: Request) {
 
   if (!apiKey) {
     const lastUserMessage = recentMessages.filter((m) => m.role === "user").pop()?.content || "";
+
+    const sampleActions: AgentAction[] = [
+      {
+        label: "📖 Open Overview docs",
+        payload: { type: "openDocsPage", data: { slug: "overview" } },
+      },
+      {
+        label: "❓ Suggested questions",
+        payload: {
+          type: "suggestQuestions",
+          data: { questions: ["What are the key modules?", "Where is CLI defined?"] },
+        },
+      },
+    ];
+
     return Response.json({
-      content: `[Agent] Answer to "${lastUserMessage}" based on repository structure.\n\n${contextSummary.slice(0, 250)}...`,
-      actions: [],
+      content: `[Agent Response] Answer to "${lastUserMessage}" based on repository structure.\n\n${contextSummary.slice(0, 250)}...`,
+      actions: sampleActions,
     } satisfies AgentResponse);
   }
 
@@ -194,6 +260,7 @@ export async function POST(request: Request) {
           generationConfig: {
             temperature: 0.2,
             maxOutputTokens: 1500,
+            response_mime_type: "application/json",
           },
         }),
       }
@@ -207,12 +274,11 @@ export async function POST(request: Request) {
     const json = await res.json();
     const rawText =
       json.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "I am unable to answer right now.";
+      '{"content": "I am unable to answer right now.", "actions": []}';
 
-    return Response.json({
-      content: rawText,
-      actions: [],
-    } satisfies AgentResponse);
+    const parsedResponse = parseAgentJsonResponse(rawText);
+
+    return Response.json(parsedResponse satisfies AgentResponse);
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : "An unexpected error occurred.";
