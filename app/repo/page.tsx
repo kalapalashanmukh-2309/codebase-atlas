@@ -18,6 +18,7 @@ import TopFunctionsPanel from "./TopFunctionsPanel";
 import FunctionDetailModal from "./FunctionDetailModal";
 import Graph3D from "./Graph3D";
 import RepoNavigatorChat from "./RepoNavigatorChat";
+import RepoAgentChat from "./RepoAgentChat";
 import { getDocsPagesForRepo, type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -135,8 +136,8 @@ function RepoPageInner() {
   // --- Dimension Mode state ("2D" | "3D") ---
   const [dimensionMode, setDimensionMode] = useState<"2D" | "3D">("2D");
 
-  // --- Main Repo Tab state ("overview" | "docs" | "navigator") ---
-  const [activeTab, setActiveTab] = useState<"overview" | "docs" | "navigator">("overview");
+  // --- Main Repo Tab state ("overview" | "docs" | "navigator" | "agent") ---
+  const [activeTab, setActiveTab] = useState<"overview" | "docs" | "navigator" | "agent">("overview");
 
   // --- Saved views refresh key (bumped when a new view is saved) ---
   const [savedViewsRefreshKey, setSavedViewsRefreshKey] = useState(0);
@@ -820,7 +821,34 @@ function RepoPageInner() {
             >
               🧭 Navigator
             </button>
+
+            <button
+              onClick={() => setActiveTab("agent")}
+              style={{
+                padding: "0.55rem 1.15rem",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "agent" ? "rgba(251, 191, 36, 0.2)" : "transparent",
+                color: activeTab === "agent" ? "#fbbf24" : "#94a3b8",
+                borderBottom: activeTab === "agent" ? "2px solid #fbbf24" : "2px solid transparent",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                fontFamily: "ui-monospace, monospace",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "color 0.2s, background 0.2s",
+              }}
+            >
+              🤖 Agent
+            </button>
           </div>
+
+          {/* Agent Tab Content */}
+          {activeTab === "agent" && (
+            <RepoAgentChat repoUrl={repoUrl} files={data.files} />
+          )}
 
           {/* Navigator Tab Content */}
           {activeTab === "navigator" && (
