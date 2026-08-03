@@ -270,6 +270,7 @@ export default function OnboardingGuideView({
               style={{
                 padding: "1rem",
                 borderRadius: "10px",
+                opacity: isDone ? 0.75 : 1,
                 background: isActive
                   ? "rgba(56, 189, 248, 0.08)"
                   : "rgba(3, 7, 18, 0.7)",
@@ -281,7 +282,7 @@ export default function OnboardingGuideView({
                 display: "flex",
                 flexDirection: "column",
                 gap: "0.75rem",
-                transition: "border-color 0.2s, background 0.2s",
+                transition: "border-color 0.2s, background 0.2s, opacity 0.2s",
               }}
             >
               {/* Step Top Line: Checkbox + Title + Mode + Actions */}
@@ -295,17 +296,38 @@ export default function OnboardingGuideView({
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flex: 1, minWidth: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={isDone}
-                    onChange={() => handleToggleStep(step.id)}
+                  <label
                     style={{
-                      width: "16px",
-                      height: "16px",
-                      accentColor: "#34d399",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.35rem",
                       cursor: "pointer",
+                      userSelect: "none",
                     }}
-                  />
+                  >
+                    <input
+                      type="checkbox"
+                      id={`step_done_${step.id}`}
+                      checked={isDone}
+                      onChange={() => handleToggleStep(step.id)}
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        accentColor: "#34d399",
+                        cursor: "pointer",
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        fontFamily: "ui-monospace, monospace",
+                        color: isDone ? "#34d399" : "#64748b",
+                      }}
+                    >
+                      {isDone ? "✓ Done" : "Mark as done"}
+                    </span>
+                  </label>
 
                   <span
                     style={{
