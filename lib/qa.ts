@@ -7,6 +7,17 @@
  * and key code snippets.
  */
 
+import {
+  analyzeFile,
+  buildCodeIndex,
+  getDefinitions,
+  getCalls,
+  type FunctionDefinition,
+  type FunctionCall,
+  type CodeIndex,
+  type FileIntelligence,
+} from "./code-intel";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -22,6 +33,7 @@ export interface AskQuestionInput {
   folders: string[];
   files: string[];
   snippets: Snippet[];
+  codeIndex?: CodeIndex;
 }
 
 export interface QaCodeSnippet {
@@ -37,6 +49,9 @@ export interface QaResult {
   summary?: string;
   isFlowQuestion?: boolean;
   codeSnippets?: QaCodeSnippet[];
+  functionName?: string;
+  definitions?: FunctionDefinition[];
+  callSites?: FunctionCall[];
 }
 
 interface GeminiCandidate {
@@ -90,6 +105,68 @@ const FLOW_KEYWORDS = [
 export function isFlowQuestion(question: string): boolean {
   const lower = question.toLowerCase();
   return FLOW_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+// ---------------------------------------------------------------------------
+// Function Intent Classification Helper
+// ---------------------------------------------------------------------------
+
+export interface FunctionQueryIntent {
+  intent: "definition" | "callers" | "general";
+  functionName: string;
+}
+
+/**
+ * Detects if a user question is asking about a specific function definition or call sites.
+ */
+export function detectFunctionQueryIntent(question: string): FunctionQueryIntent | null {
+  const q = question.trim();
+
+  // Pattern 1: Definition queries
+  const defPatterns = [
+    /where\s+is\s+(?:function\s+|method\s+)?['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?\s+defined/i,
+    /definition\s+of\s+(?:function\s+|method\s+)?['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+    /find\s+definition\s+(?:of|for)\s+['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+    /where\s+defined\s+['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+  ];
+
+  for (const p of defPatterns) {
+    const m = q.match(p);
+    if (m && m[1]) {
+      return { intent: "definition", functionName: m[1] };
+    }
+  }
+
+  // Pattern 2: Callers / Usage queries
+  const callerPatterns = [
+    /where\s+is\s+(?:function\s+|method\s+)?['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?\s+called/i,
+    /who\s+calls\s+(?:function\s+|method\s+)?['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+    /show\s+(?:me\s+)?callers\s+(?:of|for)\s+['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+    /callers\s+of\s+['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+    /calls\s+to\s+['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+    /where\s+used\s+['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?/i,
+  ];
+
+  for (const p of callerPatterns) {
+    const m = q.match(p);
+    if (m && m[1]) {
+      return { intent: "callers", functionName: m[1] };
+    }
+  }
+
+  // Pattern 3: General function queries
+  const generalPatterns = [
+    /(?:how\s+does|what\s+does)\s+(?:function\s+|method\s+)?['`"]?([a-zA-Z_$][a-zA-Z0-9_$]*)['`"]?\s+(?:work|do|execute)/i,
+  ];
+
+  for (const p of generalPatterns) {
+    const m = q.match(p);
+    if (m && m[1]) {
+      return { intent: "general", functionName: m[1] };
+    }
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,9 +334,36 @@ export function parseQaResponse(rawText: string, question = ""): QaResult {
 export async function answerQuestion(
   input: AskQuestionInput
 ): Promise<QaResult> {
+  // 1. Build or use provided CodeIndex
+  let index: CodeIndex;
+  if (input.codeIndex) {
+    index = input.codeIndex;
+  } else {
+    const intelList: FileIntelligence[] = (input.snippets || []).map((s) =>
+      analyzeFile({ path: s.path, content: s.content })
+    );
+    index = buildCodeIndex(intelList);
+  }
+
+  // 2. Check for function-level query intent
+  const funcIntent = detectFunctionQueryIntent(input.question);
+
+  let functionName: string | undefined;
+  let definitions: FunctionDefinition[] = [];
+  let callSites: FunctionCall[] = [];
+
+  if (funcIntent) {
+    functionName = funcIntent.functionName;
+    definitions = getDefinitions(index, functionName);
+    callSites = getCalls(index, functionName);
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
+    if (funcIntent && functionName) {
+      return buildDeterministicFunctionResponse(functionName, definitions, callSites);
+    }
     return {
       answer: "GEMINI_API_KEY is not configured. Please add it to your environment variables to enable Q&A.",
       referencedFiles: [],
@@ -269,7 +373,10 @@ export async function answerQuestion(
     };
   }
 
-  const userPrompt = buildUserPrompt(input);
+  const userPrompt = buildUserPrompt(
+    input,
+    funcIntent && functionName ? { functionName, definitions, callSites } : undefined
+  );
 
   try {
     const res = await fetch(
@@ -293,6 +400,9 @@ export async function answerQuestion(
     if (!res.ok) {
       const errText = await res.text();
       console.error(`Gemini Q&A API error (${res.status}):`, errText);
+      if (funcIntent && functionName) {
+        return buildDeterministicFunctionResponse(functionName, definitions, callSites);
+      }
       return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
     }
 
@@ -300,22 +410,91 @@ export async function answerQuestion(
 
     if (data.error) {
       console.error("Gemini Q&A API error:", data.error.message);
+      if (funcIntent && functionName) {
+        return buildDeterministicFunctionResponse(functionName, definitions, callSites);
+      }
       return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
     }
 
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-    return parseQaResponse(rawText, input.question);
+    const parsed = parseQaResponse(rawText, input.question);
+
+    return {
+      ...parsed,
+      functionName,
+      definitions: definitions.length > 0 ? definitions : undefined,
+      callSites: callSites.length > 0 ? callSites : undefined,
+    };
   } catch (err) {
     console.error("Failed to generate Q&A response:", err);
+    if (funcIntent && functionName) {
+      return buildDeterministicFunctionResponse(functionName, definitions, callSites);
+    }
     return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic Function Response Helper (when LLM unavailable or offline)
+// ---------------------------------------------------------------------------
+
+function buildDeterministicFunctionResponse(
+  functionName: string,
+  definitions: FunctionDefinition[],
+  callSites: FunctionCall[]
+): QaResult {
+  const lines: string[] = [];
+  const refFilesSet = new Set<string>();
+
+  if (definitions.length > 0) {
+    lines.push(`**\`${functionName}\`** is defined in:`);
+    for (const d of definitions) {
+      refFilesSet.add(d.file);
+      lines.push(`- \`${d.file}\`${d.lineEnd ? ` (lines ${d.lineStart}–${d.lineEnd})` : ` (line ${d.lineStart})`}`);
+    }
+  } else {
+    lines.push(`No definition for **\`${functionName}\`** was found in the indexed code files.`);
+  }
+
+  lines.push("");
+
+  if (callSites.length > 0) {
+    lines.push(`It is called in:`);
+    for (const c of callSites) {
+      refFilesSet.add(c.file);
+      const callerStr = c.callerFunction ? ` inside \`${c.callerFunction}\`` : "";
+      lines.push(`- \`${c.file}\` (line ${c.line}${callerStr})`);
+    }
+  } else {
+    lines.push(`No call sites for **\`${functionName}\`** were found in the indexed code files.`);
+  }
+
+  const referencedFiles = Array.from(refFilesSet);
+
+  return {
+    answer: lines.join("\n"),
+    referencedFiles,
+    focusFiles: referencedFiles,
+    summary: `Definition and call sites for function ${functionName}`,
+    isFlowQuestion: true,
+    functionName,
+    definitions,
+    callSites,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-function buildUserPrompt(input: AskQuestionInput): string {
+function buildUserPrompt(
+  input: AskQuestionInput,
+  funcContext?: {
+    functionName: string;
+    definitions: FunctionDefinition[];
+    callSites: FunctionCall[];
+  }
+): string {
   const { repoUrl, question, folders, files, snippets } = input;
 
   const topFolders =
@@ -329,6 +508,32 @@ Top-level folders: ${topFolders}
 Total source files (TS/JS): ${files.length}
 
 `;
+
+  if (funcContext && funcContext.functionName) {
+    prompt += `## Code Intelligence Index (AST Extracted)
+Target Function: \`${funcContext.functionName}\`
+
+`;
+    if (funcContext.definitions.length > 0) {
+      prompt += `Definitions:\n`;
+      prompt += funcContext.definitions
+        .map((d) => `- ${d.file} (lines ${d.lineStart}–${d.lineEnd || d.lineStart}) [Export: ${d.isExport}]`)
+        .join("\n");
+      prompt += "\n\n";
+    } else {
+      prompt += `Definitions: None found in indexed files.\n\n`;
+    }
+
+    if (funcContext.callSites.length > 0) {
+      prompt += `Call Sites:\n`;
+      prompt += funcContext.callSites
+        .map((c) => `- ${c.file} (line ${c.line}${c.callerFunction ? `, caller: ${c.callerFunction}` : ""})`)
+        .join("\n");
+      prompt += "\n\n";
+    } else {
+      prompt += `Call Sites: None found in indexed files.\n\n`;
+    }
+  }
 
   const fileListLimit = 40;
   const displayFiles = files.slice(0, fileListLimit);
