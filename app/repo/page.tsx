@@ -12,6 +12,8 @@ import SavedViewsList from "./SavedViewsList";
 import FileViewerModal from "./FileViewerModal";
 import CreateGuideModal from "./CreateGuideModal";
 import OnboardingGuideView from "./OnboardingGuideView";
+import RepoDocsList from "./RepoDocsList";
+import { type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
 import { type QaCodeSnippet } from "@/lib/qa";
@@ -199,6 +201,10 @@ function RepoPageInner() {
       questionInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       questionInputRef.current.focus();
     }
+  }
+
+  function handleOpenDocsPage(page: DocsPage) {
+    handleApplyStepView(page.graphMode, page.focusFiles || []);
   }
 
   function handleJumpToCode(file: string, startLine: number, endLine: number) {
@@ -648,6 +654,12 @@ function RepoPageInner() {
             filesCount={data.files.length}
             nodesCount={activeGraph?.nodes.length ?? 0}
             edgesCount={activeGraph?.edges.length ?? 0}
+          />
+
+          {/* Living Documentation for this repo */}
+          <RepoDocsList
+            repoUrl={repoUrl}
+            onOpenDocsPage={handleOpenDocsPage}
           />
 
           {/* Onboarding Guide for this repo */}
