@@ -10,6 +10,7 @@ import CopyLinkButton from "./CopyLinkButton";
 import SaveViewButton from "./SaveViewButton";
 import SavedViewsList from "./SavedViewsList";
 import FileViewerModal from "./FileViewerModal";
+import CreateGuideModal from "./CreateGuideModal";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
 import { type QaCodeSnippet } from "@/lib/qa";
@@ -114,6 +115,9 @@ function RepoPageInner() {
 
   // --- Saved views refresh key (bumped when a new view is saved) ---
   const [savedViewsRefreshKey, setSavedViewsRefreshKey] = useState(0);
+
+  // --- Onboarding guide modal state ---
+  const [createGuideOpen, setCreateGuideOpen] = useState(false);
 
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo) : null;
@@ -417,6 +421,34 @@ function RepoPageInner() {
             focusFiles={highlightedFiles.length > 0 ? highlightedFiles : focusFiles.length > 0 ? focusFiles : undefined}
             onSaved={() => setSavedViewsRefreshKey((k) => k + 1)}
           />
+          <button
+            onClick={() => setCreateGuideOpen(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              padding: "0.5rem 0.85rem",
+              borderRadius: "6px",
+              background: "rgba(15, 23, 42, 0.85)",
+              border: "1px solid rgba(56, 189, 248, 0.25)",
+              color: "#38bdf8",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              cursor: "pointer",
+              fontFamily: "ui-monospace, monospace",
+              transition: "border-color 0.2s, background 0.2s",
+            }}
+            onMouseOver={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(56, 189, 248, 0.5)";
+              (e.currentTarget as HTMLButtonElement).style.background = "rgba(15, 23, 42, 1)";
+            }}
+            onMouseOut={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(56, 189, 248, 0.25)";
+              (e.currentTarget as HTMLButtonElement).style.background = "rgba(15, 23, 42, 0.85)";
+            }}
+          >
+            🗺️ Create guide
+          </button>
         </div>
       </header>
 
@@ -1209,6 +1241,17 @@ function RepoPageInner() {
           focusFile={viewModalFile}
           lines={lines}
           onClose={() => setViewModalFile(null)}
+        />
+      )}
+
+      {/* Create Onboarding Guide Modal */}
+      {repoUrl && (
+        <CreateGuideModal
+          repoUrl={repoUrl}
+          currentGraphMode={graphMode}
+          currentFocusFiles={highlightedFiles.length > 0 ? highlightedFiles : focusFiles}
+          isOpen={createGuideOpen}
+          onClose={() => setCreateGuideOpen(false)}
         />
       )}
     </main>
