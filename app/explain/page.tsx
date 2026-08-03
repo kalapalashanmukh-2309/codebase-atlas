@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import type { DiffExplanation } from "@/lib/diff-explainer";
+import RepoGraph from "@/app/repo/RepoGraph";
+import { buildGraph } from "@/lib/graph-builder";
+import { buildRepoUrl } from "@/lib/url-builder";
 
 const SAMPLE_DIFF = `diff --git a/lib/qa.ts b/lib/qa.ts
 index a1b2c3d..e5f6g7h 100644
@@ -29,12 +32,26 @@ function ExplainDiffInner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<DiffExplanation | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
 
   useEffect(() => {
     if (initialRepoUrl) {
       setRepoUrl(initialRepoUrl);
     }
   }, [initialRepoUrl]);
+
+  // Build subgraph for affected modules
+  const affectedGraph = useMemo(() => {
+    if (!explanation || !explanation.affectedModules.length) return null;
+
+    // Filter valid paths or file names
+    const fileList = explanation.affectedModules.filter(
+      (m) => m.includes(".") || m.includes("/")
+    );
+    const targetFiles = fileList.length > 0 ? fileList : explanation.affectedModules;
+
+    return buildGraph(targetFiles, "detailed");
+  }, [explanation]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,6 +60,7 @@ function ExplainDiffInner() {
     setLoading(true);
     setError(null);
     setExplanation(null);
+    setShowGraph(false);
 
     try {
       const res = await fetch("/api/explain-diff", {
@@ -415,7 +433,7 @@ function ExplainDiffInner() {
 
           {/* Affected Modules */}
           {explanation.affectedModules.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
               <span
                 style={{
                   fontSize: "0.75rem",
@@ -428,6 +446,7 @@ function ExplainDiffInner() {
               >
                 📁 Affected Modules ({explanation.affectedModules.length})
               </span>
+
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
                 {explanation.affectedModules.map((mod, idx) => (
                   <span
@@ -446,6 +465,93 @@ function ExplainDiffInner() {
                   </span>
                 ))}
               </div>
+
+              {/* Action Buttons: Show in graph & Focus in Main Repo */}
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowGraph(!showGraph)}
+                  style={{
+                    padding: "0.45rem 0.85rem",
+                    borderRadius: "6px",
+                    background: showGraph ? "rgba(56, 189, 248, 0.25)" : "rgba(56, 189, 248, 0.15)",
+                    border: "1px solid rgba(56, 189, 248, 0.4)",
+                    color: "#38bdf8",
+                    fontSize: "0.82rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "ui-monospace, monospace",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                  }}
+                >
+                  🎯 {showGraph ? "Hide affected modules graph" : "Show affected modules in graph"}
+                </button>
+
+                {repoUrl && (
+                  <Link
+                    href={buildRepoUrl(repoUrl, {
+                      focusFiles: explanation.affectedModules,
+                      graphMode: "detailed",
+                    })}
+                    style={{
+                      padding: "0.45rem 0.85rem",
+                      borderRadius: "6px",
+                      background: "rgba(52, 211, 153, 0.15)",
+                      border: "1px solid rgba(52, 211, 153, 0.4)",
+                      color: "#34d399",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      textDecoration: "none",
+                      fontFamily: "ui-monospace, monospace",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                    }}
+                  >
+                    🗺️ Focus in Main Repo Graph →
+                  </Link>
+                )}
+              </div>
+
+              {/* Embedded Interactive Subgraph */}
+              {showGraph && affectedGraph && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                    padding: "1rem",
+                    borderRadius: "8px",
+                    background: "rgba(3, 7, 18, 0.8)",
+                    border: "1px solid rgba(56, 189, 248, 0.3)",
+                    marginTop: "0.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span
+                      style={{
+                        fontSize: "0.78rem",
+                        fontWeight: 700,
+                        color: "#38bdf8",
+                        fontFamily: "ui-monospace, monospace",
+                      }}
+                    >
+                      🎯 Affected Modules Subgraph ({affectedGraph.nodes.length} nodes)
+                    </span>
+                    <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+                      Highlighted in cyan
+                    </span>
+                  </div>
+
+                  <RepoGraph
+                    nodes={affectedGraph.nodes}
+                    edges={affectedGraph.edges}
+                    highlightedFiles={explanation.affectedModules}
+                  />
+                </div>
+              )}
             </div>
           )}
 
