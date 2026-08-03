@@ -31,6 +31,26 @@ export type FileIntelligence = {
   calls: CallInfo[];
 };
 
+export type FunctionDefinition = {
+  file: string;
+  functionName: string;
+  lineStart: number;
+  lineEnd?: number;
+  isExport: boolean;
+};
+
+export type FunctionCall = {
+  file: string;
+  callerFunction?: string;
+  calleeName: string;
+  line: number;
+};
+
+export type CodeIndex = {
+  definitions: Map<string, FunctionDefinition[]>; // functionName -> list of definitions
+  calls: Map<string, FunctionCall[]>; // calleeName -> list of call sites
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -182,4 +202,69 @@ export function analyzeFile(file: { path: string; content: string }): FileIntell
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Repository Indexing API
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregates per-file intelligence into a repository-level symbol and call index.
+ */
+export function buildCodeIndex(files: FileIntelligence[]): CodeIndex {
+  const definitions = new Map<string, FunctionDefinition[]>();
+  const calls = new Map<string, FunctionCall[]>();
+
+  for (const fileIntel of files) {
+    // 1. Index definitions
+    for (const fn of fileIntel.functions) {
+      const def: FunctionDefinition = {
+        file: fileIntel.path,
+        functionName: fn.name,
+        lineStart: fn.lineStart,
+        lineEnd: fn.lineEnd,
+        isExport: fn.isExport,
+      };
+
+      const existingDefs = definitions.get(fn.name);
+      if (existingDefs) {
+        existingDefs.push(def);
+      } else {
+        definitions.set(fn.name, [def]);
+      }
+    }
+
+    // 2. Index calls
+    for (const call of fileIntel.calls) {
+      const callSite: FunctionCall = {
+        file: fileIntel.path,
+        callerFunction: call.callerFunction,
+        calleeName: call.calleeName,
+        line: call.line,
+      };
+
+      const existingCalls = calls.get(call.calleeName);
+      if (existingCalls) {
+        existingCalls.push(callSite);
+      } else {
+        calls.set(call.calleeName, [callSite]);
+      }
+    }
+  }
+
+  return { definitions, calls };
+}
+
+/**
+ * Returns all function definitions for a given function name.
+ */
+export function getDefinitions(index: CodeIndex, functionName: string): FunctionDefinition[] {
+  return index.definitions.get(functionName) || [];
+}
+
+/**
+ * Returns all call sites for a given callee name.
+ */
+export function getCalls(index: CodeIndex, calleeName: string): FunctionCall[] {
+  return index.calls.get(calleeName) || [];
 }
