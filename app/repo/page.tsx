@@ -870,6 +870,9 @@ function RepoPageInner() {
               onSelectQuestion={(qText) => {
                 handleSelectQuestion(qText);
               }}
+              onOpenFile={(filePath) => {
+                setViewModalFile(filePath);
+              }}
             />
           )}
 

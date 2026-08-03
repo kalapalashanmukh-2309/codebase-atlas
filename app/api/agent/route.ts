@@ -1,9 +1,9 @@
 /**
  * POST /api/agent
  *
- * Repo-aware conversational agent endpoint.
- * Supports standard navigation queries AND a specialized "Plan a Change" mode
- * that returns a structured ChangePlan (summary, step-by-step instructions, affected files, risks).
+ * Repo-aware conversational agent endpoint returning structured assistant content,
+ * interactive AgentActions (focusFiles, showFunction, openDocsPage, suggestQuestions, focusStepFiles, openFile),
+ * and structured ChangePlans.
  */
 
 import {
@@ -36,7 +36,7 @@ export interface ChangePlan {
 export interface AgentAction {
   label: string;
   payload: {
-    type: "focusFiles" | "showFunction" | "openDocsPage" | "suggestQuestions";
+    type: "focusFiles" | "showFunction" | "openDocsPage" | "suggestQuestions" | "focusStepFiles" | "openFile";
     data: any;
   };
 }
@@ -68,8 +68,15 @@ Guidelines:
 3. Be honest & grounded: Use the provided repository analysis context as ground truth. If you don't know something based on the context, say so clearly instead of guessing.
 4. Be specific: Prefer referring to exact file paths and function names when possible.
 
+Supported action types (return 1–3 in the \`actions\` array):
+- focusFiles: { label: "Focus command.js", payload: { type: "focusFiles", data: { files: ["lib/command.js"] } } }
+- showFunction: { label: "Inspect parseArgs()", payload: { type: "showFunction", data: { functionName: "parseArgs" } } }
+- openDocsPage: { label: "Open Overview doc", payload: { type: "openDocsPage", data: { slug: "overview" } } }
+- openFile: { label: "Open command.js", payload: { type: "openFile", data: { path: "lib/command.js" } } }
+- suggestQuestions: { label: "Follow-up questions", payload: { type: "suggestQuestions", data: { questions: ["Where is CLI options handled?"] } } }
+
 Return a JSON object with keys:
-- content: (string answer)
+- content: (string answer following guidelines)
 - actions: (array of 1–3 action objects, or empty array [])
 
 Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
@@ -83,7 +90,7 @@ Return a JSON object with:
 - steps: array of step objects, each with:
     - title: short step title (e.g. "Create rate limiter middleware")
     - description: clear implementation guidance
-    - files: array of affected file paths (e.g. ["lib/auth.ts", "middleware/rate-limit.ts"])
+    - files: array of affected file paths (e.g. ["lib/command.js", "lib/option.js"])
 - risks: array of strings (potential risks, breaking changes, or reviewer considerations)
 - content: concise overview text summarizing the plan
 

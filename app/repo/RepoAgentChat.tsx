@@ -23,6 +23,7 @@ interface RepoAgentChatProps {
   onShowFunction?: (functionName: string) => void;
   onOpenDocsPage?: (slug: string) => void;
   onSelectQuestion?: (question: string) => void;
+  onOpenFile?: (filePath: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,7 @@ export default function RepoAgentChat({
   onShowFunction,
   onOpenDocsPage,
   onSelectQuestion,
+  onOpenFile,
 }: RepoAgentChatProps) {
   const [messages, setMessages] = useState<AgentMessage[]>([
     {
@@ -76,6 +78,15 @@ export default function RepoAgentChat({
     if (type === "focusFiles" && onFocusFiles) {
       const fileList = Array.isArray(data?.files) ? data.files : typeof data === "string" ? [data] : [];
       if (fileList.length > 0) onFocusFiles(fileList);
+    } else if (type === "focusStepFiles" && onFocusFiles) {
+      const fileList = Array.isArray(data?.files) ? data.files : [];
+      if (fileList.length > 0) onFocusFiles(fileList);
+    } else if (type === "openFile" && onOpenFile) {
+      const filePath = data?.path || data?.file || data;
+      if (typeof filePath === "string" && filePath) {
+        if (onFocusFiles) onFocusFiles([filePath]);
+        onOpenFile(filePath);
+      }
     } else if (type === "showFunction" && onShowFunction) {
       const fn = data?.functionName || data?.name || data;
       if (typeof fn === "string" && fn) onShowFunction(fn);
@@ -321,7 +332,7 @@ export default function RepoAgentChat({
                               border: "1px solid rgba(51, 65, 85, 0.6)",
                               display: "flex",
                               flexDirection: "column",
-                              gap: "0.3rem",
+                              gap: "0.35rem",
                             }}
                           >
                             <span style={{ fontSize: "0.83rem", fontWeight: 700, color: "#f8fafc" }}>
@@ -331,21 +342,37 @@ export default function RepoAgentChat({
                               {step.description}
                             </span>
 
+                            {/* Clickable file chips (focuses in graph & opens file view) */}
                             {step.files && step.files.length > 0 && (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.2rem" }}>
                                 {step.files.map((file, fIdx) => (
                                   <button
                                     key={fIdx}
-                                    onClick={() => onFocusFiles && onFocusFiles([file])}
+                                    onClick={() => {
+                                      if (onFocusFiles) onFocusFiles([file]);
+                                      if (onOpenFile) onOpenFile(file);
+                                    }}
                                     style={{
-                                      padding: "0.15rem 0.45rem",
-                                      borderRadius: "3px",
-                                      background: "rgba(56, 189, 248, 0.12)",
-                                      border: "1px solid rgba(56, 189, 248, 0.3)",
+                                      padding: "0.18rem 0.5rem",
+                                      borderRadius: "4px",
+                                      background: "rgba(56, 189, 248, 0.15)",
+                                      border: "1px solid rgba(56, 189, 248, 0.35)",
                                       color: "#38bdf8",
-                                      fontSize: "0.72rem",
+                                      fontSize: "0.74rem",
                                       fontFamily: "ui-monospace, monospace",
                                       cursor: "pointer",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "0.25rem",
+                                      transition: "border-color 0.2s, background 0.2s",
+                                    }}
+                                    onMouseOver={(e) => {
+                                      (e.currentTarget as HTMLButtonElement).style.borderColor =
+                                        "rgba(56, 189, 248, 0.6)";
+                                    }}
+                                    onMouseOut={(e) => {
+                                      (e.currentTarget as HTMLButtonElement).style.borderColor =
+                                        "rgba(56, 189, 248, 0.35)";
                                     }}
                                   >
                                     📄 {file}
@@ -353,6 +380,45 @@ export default function RepoAgentChat({
                                 ))}
                               </div>
                             )}
+
+                            {/* Action buttons per step */}
+                            <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
+                              {step.files && step.files.length > 0 && (
+                                <button
+                                  onClick={() => onFocusFiles && onFocusFiles(step.files)}
+                                  style={{
+                                    padding: "0.2rem 0.5rem",
+                                    borderRadius: "4px",
+                                    background: "rgba(56, 189, 248, 0.15)",
+                                    border: "1px solid rgba(56, 189, 248, 0.4)",
+                                    color: "#38bdf8",
+                                    fontSize: "0.72rem",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    fontFamily: "ui-monospace, monospace",
+                                  }}
+                                >
+                                  🎯 Show step files in graph
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => onOpenDocsPage && onOpenDocsPage("overview")}
+                                style={{
+                                  padding: "0.2rem 0.5rem",
+                                  borderRadius: "4px",
+                                  background: "rgba(52, 211, 153, 0.15)",
+                                  border: "1px solid rgba(52, 211, 153, 0.4)",
+                                  color: "#34d399",
+                                  fontSize: "0.72rem",
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                  fontFamily: "ui-monospace, monospace",
+                                }}
+                              >
+                                📖 Open relevant docs
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
