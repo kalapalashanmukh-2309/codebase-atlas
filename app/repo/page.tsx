@@ -17,6 +17,7 @@ import DocsPageViewModal from "./DocsPageViewModal";
 import TopFunctionsPanel from "./TopFunctionsPanel";
 import FunctionDetailModal from "./FunctionDetailModal";
 import Graph3D from "./Graph3D";
+import RepoNavigatorChat from "./RepoNavigatorChat";
 import { getDocsPagesForRepo, type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -133,6 +134,9 @@ function RepoPageInner() {
 
   // --- Dimension Mode state ("2D" | "3D") ---
   const [dimensionMode, setDimensionMode] = useState<"2D" | "3D">("2D");
+
+  // --- Main Repo Tab state ("overview" | "docs" | "navigator") ---
+  const [activeTab, setActiveTab] = useState<"overview" | "docs" | "navigator">("overview");
 
   // --- Saved views refresh key (bumped when a new view is saved) ---
   const [savedViewsRefreshKey, setSavedViewsRefreshKey] = useState(0);
@@ -742,19 +746,113 @@ function RepoPageInner() {
             </div>
           )}
 
-          {/* Metadata info cards */}
-          <InfoPanel
-            repoUrl={repoUrl}
-            filesCount={data.files.length}
-            nodesCount={activeGraph?.nodes.length ?? 0}
-            edgesCount={activeGraph?.edges.length ?? 0}
-          />
+          {/* Repository Main Navigation Tabs */}
+          <div
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              borderBottom: "1px solid rgba(51, 65, 85, 0.5)",
+              paddingBottom: "0.5rem",
+            }}
+          >
+            <button
+              onClick={() => setActiveTab("overview")}
+              style={{
+                padding: "0.55rem 1.15rem",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "overview" ? "rgba(56, 189, 248, 0.2)" : "transparent",
+                color: activeTab === "overview" ? "#38bdf8" : "#94a3b8",
+                borderBottom: activeTab === "overview" ? "2px solid #38bdf8" : "2px solid transparent",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                fontFamily: "ui-monospace, monospace",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "color 0.2s, background 0.2s",
+              }}
+            >
+              📊 Overview
+            </button>
 
-          {/* Living Documentation for this repo */}
-          <RepoDocsList
-            repoUrl={repoUrl}
-            onOpenDocsPage={handleOpenDocsPage}
-          />
+            <button
+              onClick={() => setActiveTab("docs")}
+              style={{
+                padding: "0.55rem 1.15rem",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "docs" ? "rgba(56, 189, 248, 0.2)" : "transparent",
+                color: activeTab === "docs" ? "#38bdf8" : "#94a3b8",
+                borderBottom: activeTab === "docs" ? "2px solid #38bdf8" : "2px solid transparent",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                fontFamily: "ui-monospace, monospace",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "color 0.2s, background 0.2s",
+              }}
+            >
+              📖 Living Docs
+            </button>
+
+            <button
+              onClick={() => setActiveTab("navigator")}
+              style={{
+                padding: "0.55rem 1.15rem",
+                borderRadius: "6px",
+                border: "none",
+                background: activeTab === "navigator" ? "rgba(56, 189, 248, 0.2)" : "transparent",
+                color: activeTab === "navigator" ? "#38bdf8" : "#94a3b8",
+                borderBottom: activeTab === "navigator" ? "2px solid #38bdf8" : "2px solid transparent",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                fontFamily: "ui-monospace, monospace",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "color 0.2s, background 0.2s",
+              }}
+            >
+              🧭 Navigator
+            </button>
+          </div>
+
+          {/* Navigator Tab Content */}
+          {activeTab === "navigator" && (
+            <RepoNavigatorChat repoUrl={repoUrl} files={data.files} />
+          )}
+
+          {/* Docs Tab Content */}
+          {activeTab === "docs" && (
+            <RepoDocsList
+              repoUrl={repoUrl}
+              onOpenDocsPage={handleOpenDocsPage}
+            />
+          )}
+
+          {/* Overview Tab Content */}
+          {activeTab === "overview" && (
+            <>
+              {/* Metadata info cards */}
+              <InfoPanel
+                repoUrl={repoUrl}
+                filesCount={data.files.length}
+                nodesCount={activeGraph?.nodes.length ?? 0}
+                edgesCount={activeGraph?.edges.length ?? 0}
+              />
+
+              {/* Living Documentation for this repo */}
+              <RepoDocsList
+                repoUrl={repoUrl}
+                onOpenDocsPage={handleOpenDocsPage}
+              />
+            </>
+          )}
 
           {/* Most Used Functions & Hooks Panel */}
           {data.functionCounts && (
