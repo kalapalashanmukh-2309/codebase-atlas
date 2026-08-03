@@ -236,17 +236,32 @@ function buildAgentContextSummary(
     new Set(analysis.files.map((f) => f.split("/")[0]).filter(Boolean))
   );
 
+  const langSummary = (analysis.detectedLanguages || [])
+    .map((l) => `${l.language} (${l.confidence} confidence: ${l.reason})`)
+    .join("; ") || "TypeScript/JavaScript";
+
   const topFuncs = (analysis.functionCounts?.allFunctions || [])
     .slice(0, 8)
     .map((f) => `${f.name} (${f.count} calls)`)
     .join(", ");
 
+  const funcIndexSummary = Object.entries(analysis.functionIndex || {})
+    .slice(0, 8)
+    .map(
+      ([name, detail]) =>
+        `${name}: defined in ${detail.definitions[0]?.file || "unknown"}, ${detail.callCount} calls`
+    )
+    .join("\n");
+
   return `=== REPOSITORY ANALYSIS CONTEXT ===
 Repository URL: ${repoUrl}
-Total TypeScript/JavaScript Files: ${fileCount}
+Detected Repo Languages: ${langSummary}
+Note: Language plugins provide AST function-level intelligence. Files without a matching language plugin are included in the file tree without function details.
+Total Analyzed Files: ${fileCount}
 Key Modules / Folders: ${folders.join(", ") || "Root level"}
 Sample Files: ${sampleFiles.join(", ")}
 ${topFuncs ? `Top Functions: ${topFuncs}` : ""}
+${funcIndexSummary ? `Function Index Summary:\n${funcIndexSummary}` : ""}
 ===================================`;
 }
 

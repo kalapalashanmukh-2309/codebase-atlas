@@ -48,6 +48,7 @@ interface GraphEdge {
 }
 
 import { type FunctionIndexRecord } from "@/lib/ast-intel";
+import { type RepoLanguageHint } from "@/lib/language-plugins";
 
 interface AnalyzeResponse {
   overview: string;
@@ -60,6 +61,7 @@ interface AnalyzeResponse {
     recommendedQuestions: string[];
   };
   monorepoInfo?: MonorepoInfo;
+  detectedLanguages?: RepoLanguageHint[];
   functionCounts?: {
     allFunctions: { name: string; count: number; files: string[] }[];
     hooks?: { name: string; count: number; files: string[] }[];
@@ -474,6 +476,28 @@ function RepoPageInner() {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
           <h1 style={{ fontSize: "1.75rem", fontWeight: 700 }}>Repository</h1>
           <p style={{ wordBreak: "break-all", color: "#94a3b8", margin: 0 }}>{repoUrl}</p>
+          {data?.detectedLanguages && data.detectedLanguages.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginTop: "0.3rem" }}>
+              {data.detectedLanguages.map((lang, idx) => (
+                <span
+                  key={idx}
+                  title={lang.reason}
+                  style={{
+                    fontSize: "0.72rem",
+                    padding: "0.15rem 0.5rem",
+                    borderRadius: "4px",
+                    background: lang.confidence === "high" ? "rgba(56, 189, 248, 0.15)" : "rgba(148, 163, 184, 0.15)",
+                    border: lang.confidence === "high" ? "1px solid rgba(56, 189, 248, 0.35)" : "1px solid rgba(148, 163, 184, 0.3)",
+                    color: lang.confidence === "high" ? "#38bdf8" : "#cbd5e1",
+                    fontWeight: 600,
+                    fontFamily: "ui-monospace, monospace",
+                  }}
+                >
+                  ⚙️ {lang.language} ({lang.confidence})
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
           <Link

@@ -1,12 +1,12 @@
 /**
  * lib/ast-intel.ts
  *
- * Repository-wide function intelligence module. Uses TypeScript compiler AST
+ * Repository-wide function intelligence module. Uses language plugins (lib/language-plugins.ts)
  * to map function names to exact definition locations, line ranges, export flags,
- * call sites, caller functions, and total invocation counts.
+ * call sites, caller functions, and total invocation counts across multiple languages.
  */
 
-import ts from "typescript";
+import { findLanguagePlugin, type FunctionInfo, type CallInfo } from "@/lib/language-plugins";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,7 +23,7 @@ export type FunctionDefinition = {
 export type FunctionCallSite = {
   file: string;
   line: number;
-  callerFunction?: string; // if inside a known function
+  callerFunction?: string;
 };
 
 export type FunctionDetail = {
@@ -49,51 +49,13 @@ export type FunctionIndexRecord = Record<
 >;
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function getScriptKind(filePath: string): ts.ScriptKind {
-  const lower = filePath.toLowerCase();
-  if (lower.endsWith(".tsx")) return ts.ScriptKind.TSX;
-  if (lower.endsWith(".jsx")) return ts.ScriptKind.JSX;
-  if (lower.endsWith(".ts") || lower.endsWith(".mts") || lower.endsWith(".cts")) {
-    return ts.ScriptKind.TS;
-  }
-  return ts.ScriptKind.JS;
-}
-
-function hasExportModifier(node: ts.Node): boolean {
-  if (ts.canHaveModifiers(node)) {
-    const modifiers = ts.getModifiers(node);
-    if (modifiers) {
-      return modifiers.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
-    }
-  }
-  return false;
-}
-
-function extractCalleeName(expression: ts.Expression): string | null {
-  if (ts.isIdentifier(expression)) {
-    return expression.text;
-  }
-  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) {
-    return expression.name.text;
-  }
-  if (ts.isElementAccessExpression(expression) && expression.argumentExpression) {
-    if (ts.isStringLiteral(expression.argumentExpression)) {
-      return expression.argumentExpression.text;
-    }
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
  * Builds a repository-wide function index mapping each function name to its
  * definitions (file + line range + export status), call sites, and total call counts.
+ * Uses language plugins for multi-language support.
  */
 export function buildFunctionIndex(
   files: { path: string; content: string }[]
@@ -117,102 +79,38 @@ export function buildFunctionIndex(
   for (const file of files) {
     if (!file.content || !file.path) continue;
 
-    try {
-      const scriptKind = getScriptKind(file.path);
-      const sourceFile = ts.createSourceFile(
-        file.path,
-        file.content,
-        ts.ScriptTarget.Latest,
-        true,
-        scriptKind
-      );
+    const plugin = findLanguagePlugin(file.path);
+    if (!plugin) continue; // Unknown language: include file in repo tree, skip function extraction
 
-      const functionStack: string[] = [];
-
-      function visit(node: ts.Node) {
-        let isFunctionScope = false;
-        let funcName: string | null = null;
-        let isExport = false;
-
-        // 1. Function Declaration
-        if (ts.isFunctionDeclaration(node)) {
-          isFunctionScope = true;
-          funcName = node.name ? node.name.text : null;
-          isExport =
-            hasExportModifier(node) ||
-            Boolean(node.parent && hasExportModifier(node.parent));
-        }
-        // 2. Arrow Function or Function Expression assigned to Variable
-        else if (ts.isVariableDeclaration(node) && node.initializer) {
-          const init = node.initializer;
-          if (
-            (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) &&
-            ts.isIdentifier(node.name)
-          ) {
-            isFunctionScope = true;
-            funcName = node.name.text;
-            const parentStatement = node.parent?.parent;
-            isExport =
-              hasExportModifier(node) ||
-              Boolean(parentStatement && hasExportModifier(parentStatement));
-          }
-        }
-        // 3. Method Declaration inside Class or Object
-        else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
-          isFunctionScope = true;
-          funcName = node.name.text;
-          isExport = hasExportModifier(node);
-        }
-
-        // Record definition if a named function scope was detected
-        if (isFunctionScope && funcName) {
-          const lineStart =
-            sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-          const lineEnd =
-            sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
-
-          const detail = getOrCreateDetail(funcName);
-          detail.definitions.push({
-            file: file.path,
-            name: funcName,
-            lineStart,
-            lineEnd,
-            isExport,
-          });
-        }
-
-        // Detect CallExpressions
-        if (ts.isCallExpression(node)) {
-          const callee = extractCalleeName(node.expression);
-          if (callee) {
-            const line =
-              sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-            const callerFunction =
-              functionStack.length > 0 ? functionStack[functionStack.length - 1] : undefined;
-
-            const detail = getOrCreateDetail(callee);
-            detail.callCount += 1;
-            detail.callSites.push({
-              file: file.path,
-              line,
-              callerFunction,
-            });
-          }
-        }
-
-        // Scope stack management for nested AST traversal
-        if (isFunctionScope && funcName) {
-          functionStack.push(funcName);
-          ts.forEachChild(node, visit);
-          functionStack.pop();
-        } else {
-          ts.forEachChild(node, visit);
-        }
+    // 1. Extract definitions via language plugin
+    if (plugin.extractFunctions) {
+      const funcs: FunctionInfo[] = plugin.extractFunctions(file);
+      for (const fn of funcs) {
+        if (!fn.name) continue;
+        const detail = getOrCreateDetail(fn.name);
+        detail.definitions.push({
+          file: file.path,
+          name: fn.name,
+          lineStart: fn.lineStart,
+          lineEnd: fn.lineEnd,
+          isExport: Boolean(fn.isExport),
+        });
       }
+    }
 
-      visit(sourceFile);
-    } catch {
-      // Skips unparseable files cleanly
+    // 2. Extract function calls via language plugin
+    if (plugin.extractCalls) {
+      const calls: CallInfo[] = plugin.extractCalls(file);
+      for (const call of calls) {
+        if (!call.calleeName) continue;
+        const detail = getOrCreateDetail(call.calleeName);
+        detail.callSites.push({
+          file: file.path,
+          line: call.line,
+          callerFunction: call.callerFunction,
+        });
+        detail.callCount += 1;
+      }
     }
   }
 
@@ -220,7 +118,7 @@ export function buildFunctionIndex(
 }
 
 /**
- * Builds a JSON-serializable Record of function details keyed by function name.
+ * Serializes Map<string, FunctionDetail> into JSON-compatible FunctionIndexRecord.
  */
 export function buildFunctionIndexRecord(
   files: { path: string; content: string }[]
@@ -228,17 +126,21 @@ export function buildFunctionIndexRecord(
   const map = buildFunctionIndex(files);
   const record: FunctionIndexRecord = {};
 
-  for (const [key, val] of map.entries()) {
-    record[key] = {
-      name: val.name,
-      definitions: val.definitions.map((d) => ({
+  for (const [name, detail] of map.entries()) {
+    record[name] = {
+      name: detail.name,
+      definitions: detail.definitions.map((d) => ({
         file: d.file,
         lineStart: d.lineStart,
         lineEnd: d.lineEnd,
         isExport: d.isExport,
       })),
-      callSites: val.callSites,
-      callCount: val.callCount,
+      callSites: detail.callSites.map((c) => ({
+        file: c.file,
+        line: c.line,
+        callerFunction: c.callerFunction,
+      })),
+      callCount: detail.callCount,
     };
   }
 

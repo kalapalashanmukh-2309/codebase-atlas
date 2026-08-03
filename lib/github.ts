@@ -22,6 +22,7 @@ export interface RepoGraph {
 }
 
 import { type FunctionIndexRecord } from "./ast-intel";
+import { detectRepoLanguages, type RepoLanguageHint } from "./language-plugins";
 
 export interface AnalyzeResult {
   overview: string;
@@ -30,6 +31,7 @@ export interface AnalyzeResult {
   noSupportedFiles: boolean;
   repoGuide: RepoGuide;
   monorepoInfo: MonorepoInfo;
+  detectedLanguages?: RepoLanguageHint[];
   functionCounts?: {
     allFunctions: { name: string; count: number; files: string[] }[];
     hooks?: { name: string; count: number; files: string[] }[];
@@ -239,6 +241,12 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
 
   const noSupportedFiles = sourceFiles.length === 0;
 
+  // --- Collect all file paths for language detection ---
+  const allTreePaths = tree
+    .filter((item) => item.type === "blob")
+    .map((item) => item.path);
+  const detectedLanguages = detectRepoLanguages(allTreePaths);
+
   // --- Build graph nodes and edges using buildGraph helper ---
   const graph = buildGraph(sourceFiles, "high-level");
   const repoGuide = detectRepoGuide(sourceFiles);
@@ -251,6 +259,7 @@ export function buildAnalyzeResult(tree: GitTreeItem[]): AnalyzeResult {
     noSupportedFiles,
     repoGuide,
     monorepoInfo,
+    detectedLanguages,
   };
 }
 

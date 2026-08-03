@@ -97,8 +97,14 @@ function buildRepoContextSummary(
     )
     .join("\n");
 
+  const langSummary = (analysis.detectedLanguages || [])
+    .map((l) => `${l.language} (${l.confidence} confidence: ${l.reason})`)
+    .join("; ") || "TypeScript/JavaScript";
+
   return `=== REPOSITORY ANALYSIS CONTEXT ===
 Repository URL: ${repoUrl}
+Detected Repo Languages: ${langSummary}
+Note: Language plugins provide AST function-level intelligence. Files without a matching language plugin are included in the file tree without function details.
 Total TypeScript/JavaScript Files: ${fileCount}
 Primary Folders / Modules: ${folders.join(", ") || "Root level"}
 Sample Files: ${sampleFiles.join(", ")}
