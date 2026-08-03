@@ -61,22 +61,29 @@ export default function RepoNavigatorChat({
       }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setInput("");
     setSending(true);
 
     try {
-      const res = await fetch("/api/ask", {
+      const res = await fetch("/api/navigate-repo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl, question: userText }),
+        body: JSON.stringify({
+          repoUrl,
+          messages: updatedMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
       });
 
       const json = await res.json();
       const replyText =
-        res.ok && json.answer
-          ? json.answer
-          : `Got your message: "${userText}". I'm analyzing ${files.length} repository files.`;
+        res.ok && json.content
+          ? json.content
+          : `Got your message: "${userText}".`;
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
