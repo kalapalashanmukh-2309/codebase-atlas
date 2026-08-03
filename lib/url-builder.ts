@@ -12,6 +12,7 @@ export interface RepoViewState {
   focusFile?: string | null;
   focusFiles?: string[];
   lines?: string | null;
+  doc?: string | null;
 }
 
 export interface ParsedRepoViewState {
@@ -20,6 +21,7 @@ export interface ParsedRepoViewState {
   focusFile: string | null;
   focusFiles: string[];
   lines: string | null;
+  doc: string | null;
 }
 
 /**
@@ -61,6 +63,11 @@ export function normalizeRepoQuery(repoUrl: string, state?: RepoViewState): URLS
   // 4. Line range parameter (e.g. "10-22")
   if (state?.lines && state.lines.trim().length > 0) {
     params.set("lines", state.lines.trim());
+  }
+
+  // 5. Living doc slug parameter (e.g. "auth-flow")
+  if (state?.doc && state.doc.trim().length > 0) {
+    params.set("doc", state.doc.trim());
   }
 
   return params;
@@ -114,11 +121,16 @@ export function parseRepoViewState(
   const rawLines = searchParams.get("lines");
   const lines = rawLines && rawLines.trim() ? decodeURIComponent(rawLines.trim()) : null;
 
+  // 5. Validate doc slug parameter (e.g. "auth-flow")
+  const rawDoc = searchParams.get("doc");
+  const doc = rawDoc && rawDoc.trim() ? decodeURIComponent(rawDoc.trim()) : null;
+
   return {
     repoUrl,
     graphMode,
     focusFile,
     focusFiles,
     lines,
+    doc,
   };
 }

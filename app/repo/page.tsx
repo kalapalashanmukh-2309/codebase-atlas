@@ -13,7 +13,8 @@ import FileViewerModal from "./FileViewerModal";
 import CreateGuideModal from "./CreateGuideModal";
 import OnboardingGuideView from "./OnboardingGuideView";
 import RepoDocsList from "./RepoDocsList";
-import { type DocsPage } from "@/lib/docs-pages";
+import DocsPageViewModal from "./DocsPageViewModal";
+import { getDocsPagesForRepo, type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
 import { type QaCodeSnippet } from "@/lib/qa";
@@ -88,7 +89,7 @@ function RepoPageInner() {
   const searchParams = useSearchParams();
 
   // Safely parse and validate URL view state with fallback defaults
-  const { repoUrl, graphMode: urlGraphMode, focusFile, focusFiles: urlFocusFiles, lines } =
+  const { repoUrl, graphMode: urlGraphMode, focusFile, focusFiles: urlFocusFiles, lines, doc } =
     parseRepoViewState(searchParams);
   const rawFocusFiles = searchParams.get("focusFiles");
 
@@ -127,6 +128,9 @@ function RepoPageInner() {
   const [createGuideOpen, setCreateGuideOpen] = useState(false);
   const [onboardingGuideRefreshKey, setOnboardingGuideRefreshKey] = useState(0);
   const questionInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // --- Living Docs page selection state ---
+  const [selectedDocsPage, setSelectedDocsPage] = useState<DocsPage | null>(null);
 
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo) : null;
@@ -204,8 +208,27 @@ function RepoPageInner() {
   }
 
   function handleOpenDocsPage(page: DocsPage) {
-    handleApplyStepView(page.graphMode, page.focusFiles || []);
+    setSelectedDocsPage(page);
+    if (repoUrl) {
+      const newUrl = buildRepoUrl(repoUrl, {
+        doc: page.slug,
+        graphMode: page.graphMode,
+        focusFiles: page.focusFiles,
+      });
+      window.history.replaceState({}, "", newUrl);
+    }
   }
+
+  // Load doc from URL param on mount / parameter change
+  useEffect(() => {
+    if (repoUrl && doc) {
+      const pages = getDocsPagesForRepo(repoUrl);
+      const found = pages.find((p) => p.slug === doc);
+      if (found) {
+        setSelectedDocsPage(found);
+      }
+    }
+  }, [repoUrl, doc]);
 
   function handleJumpToCode(file: string, startLine: number, endLine: number) {
     if (!repoUrl) return;
@@ -1501,6 +1524,25 @@ function RepoPageInner() {
           isOpen={createGuideOpen}
           onClose={() => setCreateGuideOpen(false)}
           onGuideSaved={() => setOnboardingGuideRefreshKey((k) => k + 1)}
+        />
+      )}
+
+      {/* Living Docs Page View Modal */}
+      {selectedDocsPage && (
+        <DocsPageViewModal
+          page={selectedDocsPage}
+          onClose={() => {
+            setSelectedDocsPage(null);
+            if (repoUrl) {
+              const newUrl = buildRepoUrl(repoUrl, {
+                graphMode,
+                focusFiles: highlightedFiles,
+              });
+              window.history.replaceState({}, "", newUrl);
+            }
+          }}
+          onOpenInGraph={handleApplyStepView}
+          onSelectQuestion={handleSelectQuestion}
         />
       )}
     </main>
