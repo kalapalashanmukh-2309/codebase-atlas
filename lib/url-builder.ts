@@ -13,6 +13,7 @@ export interface RepoViewState {
   focusFiles?: string[];
   lines?: string | null;
   doc?: string | null;
+  func?: string | null;
 }
 
 export interface ParsedRepoViewState {
@@ -22,6 +23,7 @@ export interface ParsedRepoViewState {
   focusFiles: string[];
   lines: string | null;
   doc: string | null;
+  func: string | null;
 }
 
 /**
@@ -68,6 +70,11 @@ export function normalizeRepoQuery(repoUrl: string, state?: RepoViewState): URLS
   // 5. Living doc slug parameter (e.g. "auth-flow")
   if (state?.doc && state.doc.trim().length > 0) {
     params.set("doc", state.doc.trim());
+  }
+
+  // 6. Function symbol parameter (e.g. "parseArgs")
+  if (state?.func && state.func.trim().length > 0) {
+    params.set("func", state.func.trim());
   }
 
   return params;
@@ -125,6 +132,10 @@ export function parseRepoViewState(
   const rawDoc = searchParams.get("doc");
   const doc = rawDoc && rawDoc.trim() ? decodeURIComponent(rawDoc.trim()) : null;
 
+  // 6. Validate func / function symbol parameter (e.g. "parseArgs")
+  const rawFunc = searchParams.get("func") || searchParams.get("function");
+  const func = rawFunc && rawFunc.trim() ? decodeURIComponent(rawFunc.trim()) : null;
+
   return {
     repoUrl,
     graphMode,
@@ -132,5 +143,6 @@ export function parseRepoViewState(
     focusFiles,
     lines,
     doc,
+    func,
   };
 }

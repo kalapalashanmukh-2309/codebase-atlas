@@ -15,6 +15,7 @@ import OnboardingGuideView from "./OnboardingGuideView";
 import RepoDocsList from "./RepoDocsList";
 import DocsPageViewModal from "./DocsPageViewModal";
 import TopFunctionsPanel from "./TopFunctionsPanel";
+import FunctionDetailModal from "./FunctionDetailModal";
 import { getDocsPagesForRepo, type DocsPage } from "@/lib/docs-pages";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -97,7 +98,7 @@ function RepoPageInner() {
   const searchParams = useSearchParams();
 
   // Safely parse and validate URL view state with fallback defaults
-  const { repoUrl, graphMode: urlGraphMode, focusFile, focusFiles: urlFocusFiles, lines, doc } =
+  const { repoUrl, graphMode: urlGraphMode, focusFile, focusFiles: urlFocusFiles, lines, doc, func } =
     parseRepoViewState(searchParams);
   const rawFocusFiles = searchParams.get("focusFiles");
 
@@ -139,6 +140,9 @@ function RepoPageInner() {
 
   // --- Living Docs page selection state ---
   const [selectedDocsPage, setSelectedDocsPage] = useState<DocsPage | null>(null);
+
+  // --- Function detail selection state ---
+  const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(func);
 
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo) : null;
@@ -216,8 +220,22 @@ function RepoPageInner() {
   }
 
   function handleSelectFunctionCall(functionName: string) {
-    handleSelectQuestion(`Where is ${functionName} called?`);
+    setSelectedFunctionName(functionName);
+    if (repoUrl) {
+      const newUrl = buildRepoUrl(repoUrl, {
+        func: functionName,
+        graphMode,
+        focusFiles: highlightedFiles,
+      });
+      window.history.replaceState({}, "", newUrl);
+    }
   }
+
+  useEffect(() => {
+    if (func) {
+      setSelectedFunctionName(func);
+    }
+  }, [func]);
 
   function handleOpenDocsPage(page: DocsPage) {
     setSelectedDocsPage(page);
@@ -1581,6 +1599,26 @@ function RepoPageInner() {
           }}
           onOpenInGraph={handleApplyStepView}
           onSelectQuestion={handleSelectQuestion}
+        />
+      )}
+
+      {/* Function Detail Modal */}
+      {selectedFunctionName && (
+        <FunctionDetailModal
+          functionName={selectedFunctionName}
+          detail={data?.functionIndex?.[selectedFunctionName]}
+          onClose={() => {
+            setSelectedFunctionName(null);
+            if (repoUrl) {
+              const newUrl = buildRepoUrl(repoUrl, {
+                graphMode,
+                focusFiles: highlightedFiles,
+              });
+              window.history.replaceState({}, "", newUrl);
+            }
+          }}
+          onOpenInGraph={handleApplyStepView}
+          onJumpToCode={handleJumpToCode}
         />
       )}
     </main>
