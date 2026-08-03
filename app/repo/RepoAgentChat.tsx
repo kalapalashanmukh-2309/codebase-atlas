@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { AgentAction, ChangePlan } from "@/app/api/agent/route";
+import type { AgentAction, ChangePlan, PRExplanation } from "@/app/api/agent/route";
 
 // ---------------------------------------------------------------------------
 // Types & Props
@@ -14,6 +14,7 @@ export interface AgentMessage {
   timestamp: string;
   actions?: AgentAction[];
   changePlan?: ChangePlan;
+  prExplanation?: PRExplanation;
 }
 
 interface RepoAgentChatProps {
@@ -44,7 +45,7 @@ export default function RepoAgentChat({
       id: "welcome",
       role: "assistant",
       content:
-        "Hello! I am your Autonomous Codebase Agent for this repository. Ask me to perform complex refactorings, search architecture patterns, or plan a change (e.g. \"I want to add rate limiting\").",
+        "Hello! I am your Autonomous Codebase Agent. Ask me to explain a PR (e.g. \"Explain this PR\"), plan a change (e.g. \"I want to add rate limiting\"), or inspect modules.",
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -58,7 +59,7 @@ export default function RepoAgentChat({
           label: "❓ Suggested questions",
           payload: {
             type: "suggestQuestions",
-            data: { questions: ["I want to add rate limiting to login", "Where is CLI handling?"] },
+            data: { questions: ["Explain this PR", "I want to add rate limiting"] },
           },
         },
       ],
@@ -141,6 +142,7 @@ export default function RepoAgentChat({
           : `Got your message: '${textToSend}'.`;
       const replyActions = Array.isArray(json.actions) ? json.actions : [];
       const replyChangePlan = json.changePlan as ChangePlan | undefined;
+      const replyPRExplanation = json.prExplanation as PRExplanation | undefined;
 
       const botMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
@@ -152,6 +154,7 @@ export default function RepoAgentChat({
         }),
         actions: replyActions,
         changePlan: replyChangePlan,
+        prExplanation: replyPRExplanation,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -197,7 +200,7 @@ export default function RepoAgentChat({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-          <span style={{ fontSize: "1.2rem" }}>🛠️</span>
+          <span style={{ fontSize: "1.2rem" }}>🤖</span>
           <div>
             <h3
               style={{
@@ -208,7 +211,7 @@ export default function RepoAgentChat({
                 fontFamily: "ui-monospace, monospace",
               }}
             >
-              Repo Agent & Change Planner
+              Repo Agent & PR Explainer
             </h3>
             <span
               style={{
@@ -217,7 +220,7 @@ export default function RepoAgentChat({
                 fontFamily: "ui-monospace, monospace",
               }}
             >
-              Autonomous Change Planning • {files.length} codebase files
+              PR Explainer & Change Planning • {files.length} codebase files
             </span>
           </div>
         </div>
@@ -234,7 +237,7 @@ export default function RepoAgentChat({
             fontFamily: "ui-monospace, monospace",
           }}
         >
-          PLANNING MODE READY
+          AGENT READY
         </span>
       </div>
 
@@ -280,6 +283,162 @@ export default function RepoAgentChat({
                 }}
               >
                 {msg.content}
+
+                {/* Structured PR Explanation Card */}
+                {!isUser && msg.prExplanation && (
+                  <div
+                    style={{
+                      marginTop: "0.85rem",
+                      padding: "1rem",
+                      borderRadius: "8px",
+                      background: "rgba(3, 7, 18, 0.75)",
+                      border: "1px solid rgba(56, 189, 248, 0.4)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.85rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{ fontSize: "1rem" }}>🔍</span>
+                      <strong style={{ color: "#38bdf8", fontSize: "0.88rem", fontFamily: "ui-monospace, monospace" }}>
+                        PR & Diff Explanation
+                      </strong>
+                    </div>
+
+                    <p style={{ margin: 0, fontSize: "0.85rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                      {msg.prExplanation.summary}
+                    </p>
+
+                    {/* Affected Modules */}
+                    {msg.prExplanation.affectedModules && msg.prExplanation.affectedModules.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#cbd5e1",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontFamily: "ui-monospace, monospace",
+                          }}
+                        >
+                          📁 Affected Modules ({msg.prExplanation.affectedModules.length})
+                        </span>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+                          {msg.prExplanation.affectedModules.map((mod, mIdx) => (
+                            <button
+                              key={mIdx}
+                              onClick={() => {
+                                if (onFocusFiles) onFocusFiles([mod]);
+                                if (onOpenFile) onOpenFile(mod);
+                              }}
+                              style={{
+                                padding: "0.18rem 0.5rem",
+                                borderRadius: "4px",
+                                background: "rgba(56, 189, 248, 0.15)",
+                                border: "1px solid rgba(56, 189, 248, 0.35)",
+                                color: "#38bdf8",
+                                fontSize: "0.74rem",
+                                fontFamily: "ui-monospace, monospace",
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.25rem",
+                              }}
+                            >
+                              📄 {mod}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Key Changes */}
+                    {msg.prExplanation.keyChanges && msg.prExplanation.keyChanges.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#34d399",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontFamily: "ui-monospace, monospace",
+                          }}
+                        >
+                          🔍 Key Changes
+                        </span>
+                        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.8rem", color: "#e2e8f0", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                          {msg.prExplanation.keyChanges.map((change, cIdx) => (
+                            <li key={cIdx}>{change}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Risks & Reviewer Notes */}
+                    {msg.prExplanation.risks && msg.prExplanation.risks.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        <span
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#fbbf24",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            fontFamily: "ui-monospace, monospace",
+                          }}
+                        >
+                          ⚠️ Risks & Reviewer Notes
+                        </span>
+                        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.8rem", color: "#fef08a", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                          {msg.prExplanation.risks.map((risk, rIdx) => (
+                            <li key={rIdx}>{risk}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* PR Action Buttons */}
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
+                      {msg.prExplanation.affectedModules && msg.prExplanation.affectedModules.length > 0 && (
+                        <button
+                          onClick={() => onFocusFiles && onFocusFiles(msg.prExplanation!.affectedModules)}
+                          style={{
+                            padding: "0.2rem 0.55rem",
+                            borderRadius: "4px",
+                            background: "rgba(56, 189, 248, 0.15)",
+                            border: "1px solid rgba(56, 189, 248, 0.4)",
+                            color: "#38bdf8",
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            fontFamily: "ui-monospace, monospace",
+                          }}
+                        >
+                          🎯 Show affected files in graph
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => onOpenDocsPage && onOpenDocsPage("overview")}
+                        style={{
+                          padding: "0.2rem 0.55rem",
+                          borderRadius: "4px",
+                          background: "rgba(52, 211, 153, 0.15)",
+                          border: "1px solid rgba(52, 211, 153, 0.4)",
+                          color: "#34d399",
+                          fontSize: "0.72rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "ui-monospace, monospace",
+                        }}
+                      >
+                        📖 Open related docs
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Structured Change Plan Card */}
                 {!isUser && msg.changePlan && (
@@ -342,7 +501,7 @@ export default function RepoAgentChat({
                               {step.description}
                             </span>
 
-                            {/* Clickable file chips (focuses in graph & opens file view) */}
+                            {/* Clickable file chips */}
                             {step.files && step.files.length > 0 && (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.2rem" }}>
                                 {step.files.map((file, fIdx) => (
@@ -364,15 +523,6 @@ export default function RepoAgentChat({
                                       display: "inline-flex",
                                       alignItems: "center",
                                       gap: "0.25rem",
-                                      transition: "border-color 0.2s, background 0.2s",
-                                    }}
-                                    onMouseOver={(e) => {
-                                      (e.currentTarget as HTMLButtonElement).style.borderColor =
-                                        "rgba(56, 189, 248, 0.6)";
-                                    }}
-                                    onMouseOut={(e) => {
-                                      (e.currentTarget as HTMLButtonElement).style.borderColor =
-                                        "rgba(56, 189, 248, 0.35)";
                                     }}
                                   >
                                     📄 {file}
@@ -569,7 +719,7 @@ export default function RepoAgentChat({
               fontFamily: "ui-monospace, monospace",
             }}
           >
-            <span>⏳ Agent is formulating change plan…</span>
+            <span>⏳ Agent is analyzing PR / diff request…</span>
           </div>
         )}
 
@@ -589,7 +739,7 @@ export default function RepoAgentChat({
       >
         <input
           type="text"
-          placeholder="I want to add rate limiting to login..."
+          placeholder="Explain this PR, plan a change, or ask a question..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
@@ -620,7 +770,7 @@ export default function RepoAgentChat({
             fontFamily: "ui-monospace, monospace",
           }}
         >
-          Plan Change
+          Submit
         </button>
       </form>
     </div>

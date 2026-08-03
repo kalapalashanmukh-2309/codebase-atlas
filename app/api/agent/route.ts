@@ -1,9 +1,9 @@
 /**
  * POST /api/agent
  *
- * Repo-aware conversational agent endpoint returning structured assistant content,
- * interactive AgentActions (focusFiles, showFunction, openDocsPage, suggestQuestions, focusStepFiles, openFile),
- * and structured ChangePlans.
+ * Repo-aware conversational agent endpoint.
+ * Supports standard navigation queries, "Plan a Change" mode, and "Explain this PR" mode.
+ * Returns structured responses with AgentActions, ChangePlans, and PRExplanations.
  */
 
 import {
@@ -33,6 +33,13 @@ export interface ChangePlan {
   risks: string[];
 }
 
+export interface PRExplanation {
+  summary: string;
+  affectedModules: string[];
+  keyChanges: string[];
+  risks: string[];
+}
+
 export interface AgentAction {
   label: string;
   payload: {
@@ -46,6 +53,7 @@ export interface AgentChatMessage {
   content: string;
   actions?: AgentAction[];
   changePlan?: ChangePlan;
+  prExplanation?: PRExplanation;
 }
 
 export interface AgentRequest {
@@ -57,6 +65,7 @@ export interface AgentResponse {
   content: string;
   actions?: AgentAction[];
   changePlan?: ChangePlan;
+  prExplanation?: PRExplanation;
 }
 
 export const AGENT_SYSTEM_PROMPT = `You are a codebase navigator agent.
@@ -68,15 +77,8 @@ Guidelines:
 3. Be honest & grounded: Use the provided repository analysis context as ground truth. If you don't know something based on the context, say so clearly instead of guessing.
 4. Be specific: Prefer referring to exact file paths and function names when possible.
 
-Supported action types (return 1–3 in the \`actions\` array):
-- focusFiles: { label: "Focus command.js", payload: { type: "focusFiles", data: { files: ["lib/command.js"] } } }
-- showFunction: { label: "Inspect parseArgs()", payload: { type: "showFunction", data: { functionName: "parseArgs" } } }
-- openDocsPage: { label: "Open Overview doc", payload: { type: "openDocsPage", data: { slug: "overview" } } }
-- openFile: { label: "Open command.js", payload: { type: "openFile", data: { path: "lib/command.js" } } }
-- suggestQuestions: { label: "Follow-up questions", payload: { type: "suggestQuestions", data: { questions: ["Where is CLI options handled?"] } } }
-
 Return a JSON object with keys:
-- content: (string answer following guidelines)
+- content: (string answer)
 - actions: (array of 1–3 action objects, or empty array [])
 
 Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
@@ -96,6 +98,18 @@ Return a JSON object with:
 
 Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
 
+export const PR_EXPLAINER_PROMPT = `You are an expert principal software engineer reviewing code diffs and pull requests.
+You are given the repository context and a unified diff or PR description.
+
+Return a JSON object with:
+- summary: 2–4 sentences describing what this PR does at a high level.
+- affectedModules: array of affected file paths or modules (e.g. ["lib/command.js", "lib/option.js"])
+- keyChanges: array of 3–6 bullet points describing the main changes
+- risks: array of 2–4 bullet points describing potential risks or reviewer notes
+- content: concise overview text summarizing the PR review
+
+Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
+
 /**
  * Detects whether a user message expresses intent to plan a code change.
  */
@@ -109,8 +123,25 @@ function isChangePlanIntent(userText: string): boolean {
     "plan a change",
     "how can i add",
     "create a plan",
-    "implement rate limiting",
-    "add feature",
+  ];
+  return patterns.some((p) => lower.includes(p));
+}
+
+/**
+ * Detects whether a user message expresses intent to review/explain a PR or diff.
+ */
+function isPRExplainIntent(userText: string): boolean {
+  const lower = userText.toLowerCase().trim();
+  const patterns = [
+    "explain this pr",
+    "explain pr",
+    "review this pr",
+    "what does this diff do",
+    "explain diff",
+    "here's a diff",
+    "diff --git",
+    "--- a/",
+    "+++ b/",
   ];
   return patterns.some((p) => lower.includes(p));
 }
@@ -169,10 +200,14 @@ function parseAgentJsonResponse(rawText: string): AgentResponse {
 
     const parsed = JSON.parse(cleanText.trim());
 
+    const isPR = parsed.affectedModules && Array.isArray(parsed.affectedModules);
+    const isPlan = parsed.steps && Array.isArray(parsed.steps);
+
     return {
       content: typeof parsed.content === "string" ? parsed.content : typeof parsed.summary === "string" ? parsed.summary : rawText,
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
-      changePlan: parsed.steps && Array.isArray(parsed.steps) ? (parsed as ChangePlan) : undefined,
+      changePlan: isPlan ? (parsed as ChangePlan) : undefined,
+      prExplanation: isPR ? (parsed as PRExplanation) : undefined,
     };
   } catch {
     return {
@@ -212,7 +247,8 @@ export async function POST(request: Request) {
 
   const recentMessages = messages.slice(-10);
   const lastUserMessage = recentMessages.filter((m) => m.role === "user").pop()?.content || "";
-  const isPlanningMode = isChangePlanIntent(lastUserMessage);
+  const isPRMode = isPRExplainIntent(lastUserMessage);
+  const isPlanningMode = !isPRMode && isChangePlanIntent(lastUserMessage);
   const apiKey = process.env.GEMINI_API_KEY;
 
   // 1. Fetch & compute repository analysis context
@@ -246,6 +282,33 @@ export async function POST(request: Request) {
 
   // 2. Offline fallback handling if no API key is configured
   if (!apiKey) {
+    if (isPRMode) {
+      // Extract file paths from diff regex
+      const fileMatches = Array.from(
+        lastUserMessage.matchAll(/(?:---|\+\+\+)\s+[ab]\/(.+)/g)
+      ).map((m) => m[1]);
+      const affectedModules = Array.from(new Set(fileMatches));
+
+      const samplePRExplanation: PRExplanation = {
+        summary: `Explanation for PR / diff patch in ${repoUrl}. (Offline Mode)`,
+        affectedModules: affectedModules.length > 0 ? affectedModules : ["lib/command.js"],
+        keyChanges: [
+          "Updated core function signatures and parameter checks.",
+          "Refactored execution pipeline and edge condition validation.",
+        ],
+        risks: [
+          "Ensure unit test suite runs to verify no regression.",
+          "GEMINI_API_KEY is not configured for full dynamic AI PR review.",
+        ],
+      };
+
+      return Response.json({
+        content: samplePRExplanation.summary,
+        prExplanation: samplePRExplanation,
+        actions: [],
+      } satisfies AgentResponse);
+    }
+
     if (isPlanningMode) {
       const samplePlan: ChangePlan = {
         summary: `Implementation plan for "${lastUserMessage}" across repository files. (Offline Mode)`,
@@ -281,7 +344,12 @@ export async function POST(request: Request) {
   }
 
   // 3. Call Gemini LLM with intent-specific prompt
-  const activeSystemPrompt = isPlanningMode ? CHANGE_PLANNER_PROMPT : AGENT_SYSTEM_PROMPT;
+  const activeSystemPrompt = isPRMode
+    ? PR_EXPLAINER_PROMPT
+    : isPlanningMode
+    ? CHANGE_PLANNER_PROMPT
+    : AGENT_SYSTEM_PROMPT;
+
   const contents = recentMessages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
