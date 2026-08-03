@@ -824,7 +824,27 @@ function RepoPageInner() {
 
           {/* Navigator Tab Content */}
           {activeTab === "navigator" && (
-            <RepoNavigatorChat repoUrl={repoUrl} files={data.files} />
+            <RepoNavigatorChat
+              repoUrl={repoUrl}
+              files={data.files}
+              onFocusFiles={(focusFileList) => {
+                setHighlightedFiles(focusFileList);
+                setActiveTab("overview");
+                if (graphSectionRef.current) {
+                  graphSectionRef.current.scrollIntoView({ behavior: "smooth" });
+                }
+              }}
+              onShowFunction={(funcName) => {
+                handleSelectFunctionCall(funcName);
+              }}
+              onOpenDocsPage={(docSlug) => {
+                const pages = getDocsPagesForRepo(repoUrl);
+                const target = pages.find((p) => p.slug === docSlug);
+                if (target) {
+                  handleOpenDocsPage(target);
+                }
+              }}
+            />
           )}
 
           {/* Docs Tab Content */}

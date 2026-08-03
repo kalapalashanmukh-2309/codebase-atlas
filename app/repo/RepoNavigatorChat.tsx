@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import type { NavigatorAction } from "@/app/api/navigate-repo/route";
 
 // ---------------------------------------------------------------------------
 // Types & Props
@@ -11,11 +12,15 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  actions?: NavigatorAction[];
 }
 
 interface RepoNavigatorChatProps {
   repoUrl: string;
   files: string[];
+  onFocusFiles?: (files: string[]) => void;
+  onShowFunction?: (functionName: string) => void;
+  onOpenDocsPage?: (slug: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -25,6 +30,9 @@ interface RepoNavigatorChatProps {
 export default function RepoNavigatorChat({
   repoUrl,
   files,
+  onFocusFiles,
+  onShowFunction,
+  onOpenDocsPage,
 }: RepoNavigatorChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -36,6 +44,12 @@ export default function RepoNavigatorChat({
         hour: "2-digit",
         minute: "2-digit",
       }),
+      actions: [
+        {
+          label: "📖 Open Overview docs",
+          payload: { type: "openDocsPage", data: { slug: "overview" } },
+        },
+      ],
     },
   ]);
   const [input, setInput] = useState("");
@@ -45,6 +59,27 @@ export default function RepoNavigatorChat({
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  function handleActionClick(action: NavigatorAction) {
+    const { type, data } = action.payload;
+
+    if (type === "focusFiles" && onFocusFiles) {
+      const fileList = Array.isArray(data?.files) ? data.files : typeof data === "string" ? [data] : [];
+      if (fileList.length > 0) {
+        onFocusFiles(fileList);
+      }
+    } else if (type === "showFunction" && onShowFunction) {
+      const fn = data?.functionName || data?.name || data;
+      if (typeof fn === "string" && fn) {
+        onShowFunction(fn);
+      }
+    } else if (type === "openDocsPage" && onOpenDocsPage) {
+      const slug = data?.slug || data;
+      if (typeof slug === "string" && slug) {
+        onOpenDocsPage(slug);
+      }
+    }
+  }
 
   async function handleSend(e?: React.FormEvent) {
     if (e) e.preventDefault();
@@ -84,6 +119,7 @@ export default function RepoNavigatorChat({
         res.ok && json.content
           ? json.content
           : `Got your message: "${userText}".`;
+      const replyActions = Array.isArray(json.actions) ? json.actions : [];
 
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -93,6 +129,7 @@ export default function RepoNavigatorChat({
           hour: "2-digit",
           minute: "2-digit",
         }),
+        actions: replyActions,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -117,7 +154,7 @@ export default function RepoNavigatorChat({
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "520px",
+        height: "540px",
         borderRadius: "12px",
         background: "rgba(15, 23, 42, 0.85)",
         backdropFilter: "blur(12px)",
@@ -187,7 +224,7 @@ export default function RepoNavigatorChat({
           overflowY: "auto",
           display: "flex",
           flexDirection: "column",
-          gap: "1rem",
+          gap: "1.1rem",
         }}
       >
         {messages.map((msg) => {
@@ -199,12 +236,12 @@ export default function RepoNavigatorChat({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: isUser ? "flex-end" : "flex-start",
-                gap: "0.25rem",
+                gap: "0.3rem",
               }}
             >
               <div
                 style={{
-                  maxWidth: "82%",
+                  maxWidth: "85%",
                   padding: "0.75rem 1rem",
                   borderRadius: isUser ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
                   background: isUser
@@ -221,7 +258,54 @@ export default function RepoNavigatorChat({
                 }}
               >
                 {msg.content}
+
+                {/* Assistant Action Buttons */}
+                {!isUser && msg.actions && msg.actions.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "0.4rem",
+                      marginTop: "0.6rem",
+                      paddingTop: "0.5rem",
+                      borderTop: "1px solid rgba(51, 65, 85, 0.5)",
+                    }}
+                  >
+                    {msg.actions.map((act, aIdx) => (
+                      <button
+                        key={aIdx}
+                        onClick={() => handleActionClick(act)}
+                        style={{
+                          padding: "0.35rem 0.75rem",
+                          borderRadius: "5px",
+                          background: "rgba(56, 189, 248, 0.15)",
+                          border: "1px solid rgba(56, 189, 248, 0.4)",
+                          color: "#38bdf8",
+                          fontSize: "0.78rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "ui-monospace, monospace",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.3rem",
+                          transition: "background 0.2s, border-color 0.2s",
+                        }}
+                        onMouseOver={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.background =
+                            "rgba(56, 189, 248, 0.3)";
+                        }}
+                        onMouseOut={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.background =
+                            "rgba(56, 189, 248, 0.15)";
+                        }}
+                      >
+                        ⚡ {act.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
               <span
                 style={{
                   fontSize: "0.68rem",
@@ -248,7 +332,7 @@ export default function RepoNavigatorChat({
               fontFamily: "ui-monospace, monospace",
             }}
           >
-            <span>⏳ Navigator is thinking…</span>
+            <span>⏳ Navigator is analyzing repo actions…</span>
           </div>
         )}
 
@@ -268,7 +352,7 @@ export default function RepoNavigatorChat({
       >
         <input
           type="text"
-          placeholder="Ask Navigator about this repo..."
+          placeholder="Ask Navigator about auth, routing, or functions..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
