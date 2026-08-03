@@ -8,6 +8,7 @@ import InfoPanel from "./InfoPanel";
 import GraphExplanation from "./GraphExplanation";
 import CopyLinkButton from "./CopyLinkButton";
 import SaveViewButton from "./SaveViewButton";
+import SavedViewsList from "./SavedViewsList";
 import FileViewerModal from "./FileViewerModal";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -110,6 +111,9 @@ function RepoPageInner() {
 
   // --- Graph Mode state ("high-level" | "detailed") ---
   const [graphMode, setGraphMode] = useState<GraphMode>(urlGraphMode);
+
+  // --- Saved views refresh key (bumped when a new view is saved) ---
+  const [savedViewsRefreshKey, setSavedViewsRefreshKey] = useState(0);
 
   // Rebuild graph dynamically based on active graphMode and file list
   const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo) : null;
@@ -393,6 +397,7 @@ function RepoPageInner() {
             repoUrl={repoUrl}
             graphMode={graphMode}
             focusFiles={highlightedFiles.length > 0 ? highlightedFiles : focusFiles.length > 0 ? focusFiles : undefined}
+            onSaved={() => setSavedViewsRefreshKey((k) => k + 1)}
           />
         </div>
       </header>
@@ -540,6 +545,9 @@ function RepoPageInner() {
             nodesCount={activeGraph?.nodes.length ?? 0}
             edgesCount={activeGraph?.edges.length ?? 0}
           />
+
+          {/* Saved Views for this repo */}
+          <SavedViewsList repoUrl={repoUrl} refreshKey={savedViewsRefreshKey} />
 
           {data.noSupportedFiles || data.files.length === 0 ? (
             <div

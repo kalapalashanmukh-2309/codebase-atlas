@@ -11,6 +11,7 @@ interface SaveViewButtonProps {
   repoUrl: string;
   graphMode: "high-level" | "detailed";
   focusFiles?: string[];
+  onSaved?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ export default function SaveViewButton({
   repoUrl,
   graphMode,
   focusFiles,
+  onSaved,
 }: SaveViewButtonProps) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -45,6 +47,7 @@ export default function SaveViewButton({
     });
 
     setSaved(true);
+    onSaved?.();
     setTimeout(() => {
       setSaved(false);
       setOpen(false);
