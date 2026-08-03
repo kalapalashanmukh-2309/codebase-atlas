@@ -16,6 +16,7 @@ import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-buil
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
 import { type QaCodeSnippet } from "@/lib/qa";
 import { type MonorepoInfo } from "@/lib/monorepo";
+import { type FunctionDefinition, type FunctionCall } from "@/lib/code-intel";
 import {
   getRecentAnalyses,
   addRecentAnalysis,
@@ -103,6 +104,9 @@ function RepoPageInner() {
   const [summary, setSummary] = useState<string | null>(null);
   const [codeSnippets, setCodeSnippets] = useState<QaCodeSnippet[]>([]);
   const [askError, setAskError] = useState<string | null>(null);
+  const [qaFunctionName, setQaFunctionName] = useState<string | null>(null);
+  const [qaDefinitions, setQaDefinitions] = useState<FunctionDefinition[]>([]);
+  const [qaCallSites, setQaCallSites] = useState<FunctionCall[]>([]);
 
   // --- Graph Section Ref & Highlighted Files ---
   const graphSectionRef = useRef<HTMLDivElement>(null);
@@ -290,6 +294,9 @@ function RepoPageInner() {
     setFocusFiles([]);
     setSummary(null);
     setCodeSnippets([]);
+    setQaFunctionName(null);
+    setQaDefinitions([]);
+    setQaCallSites([]);
 
     try {
       const res = await fetch("/api/ask", {
@@ -308,6 +315,9 @@ function RepoPageInner() {
         setFocusFiles(json.focusFiles || []);
         setSummary(json.summary || null);
         setCodeSnippets(json.codeSnippets || []);
+        setQaFunctionName(json.functionName || null);
+        setQaDefinitions(json.definitions || []);
+        setQaCallSites(json.callSites || []);
       }
     } catch (err) {
       setAskError(err instanceof Error ? err.message : "Failed to fetch Q&A answer.");
@@ -994,6 +1004,178 @@ function RepoPageInner() {
                 {answer}
               </div>
             </div>
+
+            {/* Function Intelligence Section if definitions or callSites present */}
+            {(qaFunctionName || qaDefinitions.length > 0 || qaCallSites.length > 0) && (
+              <div
+                style={{
+                  padding: "1rem 1.1rem",
+                  borderRadius: "8px",
+                  background: "rgba(3, 7, 18, 0.8)",
+                  border: "1px solid rgba(56, 189, 248, 0.3)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.85rem",
+                }}
+              >
+                {/* Header & Show in Graph Button */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "1.1rem" }}>⚡</span>
+                    <h4
+                      style={{
+                        margin: 0,
+                        fontSize: "0.95rem",
+                        fontWeight: 700,
+                        color: "#38bdf8",
+                        fontFamily: "ui-monospace, monospace",
+                      }}
+                    >
+                      Function Intelligence: {qaFunctionName ? `\`${qaFunctionName}\`` : "Detected Symbol"}
+                    </h4>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const defFiles = qaDefinitions.map((d) => d.file);
+                      const callerFiles = qaCallSites.map((c) => c.file);
+                      const all = Array.from(new Set([...defFiles, ...callerFiles]));
+                      if (all.length > 0) {
+                        handleApplyStepView("detailed", all);
+                      }
+                    }}
+                    style={{
+                      padding: "0.4rem 0.85rem",
+                      borderRadius: "6px",
+                      border: "1px solid rgba(56, 189, 248, 0.4)",
+                      background: "rgba(56, 189, 248, 0.15)",
+                      color: "#38bdf8",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  >
+                    🎯 Show in graph
+                  </button>
+                </div>
+
+                {/* Definitions */}
+                {qaDefinitions.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        color: "#94a3b8",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        fontFamily: "ui-monospace, monospace",
+                      }}
+                    >
+                      Definitions ({qaDefinitions.length})
+                    </span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                      {qaDefinitions.map((def, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleJumpToCode(def.file, def.lineStart, def.lineEnd || def.lineStart)}
+                          style={{
+                            textAlign: "left",
+                            padding: "0.4rem 0.65rem",
+                            borderRadius: "5px",
+                            background: "rgba(15, 23, 42, 0.9)",
+                            border: "1px solid rgba(51, 65, 85, 0.6)",
+                            color: "#38bdf8",
+                            fontSize: "0.82rem",
+                            fontFamily: "ui-monospace, monospace",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span>
+                            📄 <strong>{def.file}</strong> (lines {def.lineStart}{def.lineEnd ? `–${def.lineEnd}` : ""})
+                          </span>
+                          {def.isExport && (
+                            <span
+                              style={{
+                                fontSize: "0.65rem",
+                                padding: "0.1rem 0.3rem",
+                                borderRadius: "3px",
+                                background: "rgba(52, 211, 153, 0.15)",
+                                color: "#34d399",
+                                border: "1px solid rgba(52, 211, 153, 0.3)",
+                              }}
+                            >
+                              EXPORTED
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Call Sites */}
+                {qaCallSites.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        fontWeight: 700,
+                        color: "#94a3b8",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                        fontFamily: "ui-monospace, monospace",
+                      }}
+                    >
+                      Called in ({qaCallSites.length})
+                    </span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                      {qaCallSites.map((call, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleJumpToCode(call.file, call.line, call.line)}
+                          style={{
+                            textAlign: "left",
+                            padding: "0.4rem 0.65rem",
+                            borderRadius: "5px",
+                            background: "rgba(15, 23, 42, 0.9)",
+                            border: "1px solid rgba(51, 65, 85, 0.6)",
+                            color: "#cbd5e1",
+                            fontSize: "0.82rem",
+                            fontFamily: "ui-monospace, monospace",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span>
+                            📞 <strong>{call.file}</strong> (line {call.line})
+                          </span>
+                          {call.callerFunction && (
+                            <span style={{ fontSize: "0.72rem", color: "#38bdf8" }}>
+                              inside <code style={{ color: "#f8fafc" }}>{call.callerFunction}()</code>
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Relevant Code Snippets Section */}
             {codeSnippets.length > 0 && (

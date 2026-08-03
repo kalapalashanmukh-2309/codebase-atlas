@@ -77,6 +77,9 @@ export async function POST(request: Request) {
       summary: result.summary,
       isFlowQuestion: result.isFlowQuestion,
       codeSnippets: result.codeSnippets,
+      functionName: result.functionName,
+      definitions: result.definitions,
+      callSites: result.callSites,
     });
   } catch (err: unknown) {
     const message =
