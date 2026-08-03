@@ -7,6 +7,7 @@ import RepoGraph from "./RepoGraph";
 import InfoPanel from "./InfoPanel";
 import GraphExplanation from "./GraphExplanation";
 import CopyLinkButton from "./CopyLinkButton";
+import SaveViewButton from "./SaveViewButton";
 import FileViewerModal from "./FileViewerModal";
 import { buildGraph, buildFocusSubgraph, type GraphMode } from "@/lib/graph-builder";
 import { buildRepoUrl, parseRepoViewState } from "@/lib/url-builder";
@@ -387,6 +388,11 @@ function RepoPageInner() {
             graphMode={graphMode}
             focusFile={focusFile}
             focusFiles={highlightedFiles}
+          />
+          <SaveViewButton
+            repoUrl={repoUrl}
+            graphMode={graphMode}
+            focusFiles={highlightedFiles.length > 0 ? highlightedFiles : focusFiles.length > 0 ? focusFiles : undefined}
           />
         </div>
       </header>
