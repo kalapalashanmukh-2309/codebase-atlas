@@ -13,6 +13,7 @@ import {
 } from "@/lib/github";
 import { generateOverview } from "@/lib/overview";
 import { countFunctionCalls } from "@/lib/ast-counts";
+import { buildFunctionIndexRecord } from "@/lib/ast-intel";
 
 export async function POST(request: Request) {
   let body: { repoUrl?: string };
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     // 3. Build the analysis result (TS files + graph)
     const result = buildAnalyzeResult(tree);
 
-    // 4. Concurrently fetch content for sample files to calculate function/hook counts
+    // 4. Concurrently fetch content for sample files to calculate function/hook counts & detailed index
     const sampleFiles = result.files.slice(0, 15);
     const snippetPromises = sampleFiles.map(async (filePath) => {
       const content = await fetchFileContent(owner, repo, filePath, 4000);
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
 
     if (fetchedFiles.length > 0) {
       result.functionCounts = countFunctionCalls(fetchedFiles);
+      result.functionIndex = buildFunctionIndexRecord(fetchedFiles);
     }
 
     // 5. Generate an AI overview (single LLM call, falls back gracefully)

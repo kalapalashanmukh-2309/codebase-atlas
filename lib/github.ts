@@ -21,6 +21,8 @@ export interface RepoGraph {
   edges: GraphEdge[];
 }
 
+import { type FunctionIndexRecord } from "./ast-intel";
+
 export interface AnalyzeResult {
   overview: string;
   files: string[];
@@ -32,6 +34,7 @@ export interface AnalyzeResult {
     allFunctions: { name: string; count: number; files: string[] }[];
     hooks?: { name: string; count: number; files: string[] }[];
   };
+  functionIndex?: FunctionIndexRecord;
 }
 
 /** Shape of a single item returned by the GitHub Git Trees API. */

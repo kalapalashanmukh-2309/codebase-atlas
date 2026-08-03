@@ -33,6 +33,21 @@ export type FunctionDetail = {
   callCount: number;
 };
 
+export type FunctionIndexRecord = Record<
+  string,
+  {
+    name: string;
+    definitions: {
+      file: string;
+      lineStart: number;
+      lineEnd?: number;
+      isExport: boolean;
+    }[];
+    callSites: { file: string; line: number; callerFunction?: string }[];
+    callCount: number;
+  }
+>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -202,4 +217,30 @@ export function buildFunctionIndex(
   }
 
   return indexMap;
+}
+
+/**
+ * Builds a JSON-serializable Record of function details keyed by function name.
+ */
+export function buildFunctionIndexRecord(
+  files: { path: string; content: string }[]
+): FunctionIndexRecord {
+  const map = buildFunctionIndex(files);
+  const record: FunctionIndexRecord = {};
+
+  for (const [key, val] of map.entries()) {
+    record[key] = {
+      name: val.name,
+      definitions: val.definitions.map((d) => ({
+        file: d.file,
+        lineStart: d.lineStart,
+        lineEnd: d.lineEnd,
+        isExport: d.isExport,
+      })),
+      callSites: val.callSites,
+      callCount: val.callCount,
+    };
+  }
+
+  return record;
 }

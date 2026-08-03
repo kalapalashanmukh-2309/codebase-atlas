@@ -43,6 +43,8 @@ interface GraphEdge {
   to: string;
 }
 
+import { type FunctionIndexRecord } from "@/lib/ast-intel";
+
 interface AnalyzeResponse {
   overview: string;
   files: string[];
@@ -58,6 +60,7 @@ interface AnalyzeResponse {
     allFunctions: { name: string; count: number; files: string[] }[];
     hooks?: { name: string; count: number; files: string[] }[];
   };
+  functionIndex?: FunctionIndexRecord;
 }
 
 // ---------------------------------------------------------------------------
