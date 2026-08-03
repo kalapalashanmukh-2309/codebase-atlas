@@ -1,5 +1,7 @@
 "use client";
 
+import { buildRepoUrl } from "@/lib/url-builder";
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -11,6 +13,7 @@ interface FunctionCountItem {
 }
 
 interface TopFunctionsPanelProps {
+  repoUrl: string;
   functionCounts?: {
     allFunctions: FunctionCountItem[];
     hooks?: FunctionCountItem[];
@@ -23,6 +26,7 @@ interface TopFunctionsPanelProps {
 // ---------------------------------------------------------------------------
 
 export default function TopFunctionsPanel({
+  repoUrl,
   functionCounts,
   onSelectFunction,
 }: TopFunctionsPanelProps) {
@@ -92,9 +96,13 @@ export default function TopFunctionsPanel({
             }}
           >
             {topFunctions.map((item) => (
-              <button
+              <a
                 key={item.name}
-                onClick={() => onSelectFunction(item.name)}
+                href={buildRepoUrl(repoUrl, { func: item.name })}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSelectFunction(item.name);
+                }}
                 style={{
                   textAlign: "left",
                   padding: "0.5rem 0.75rem",
@@ -105,18 +113,19 @@ export default function TopFunctionsPanel({
                   display: "flex",
                   flexDirection: "column",
                   gap: "0.2rem",
+                  textDecoration: "none",
                   transition: "border-color 0.2s, background 0.2s",
                 }}
                 onMouseOver={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor =
+                  (e.currentTarget as HTMLAnchorElement).style.borderColor =
                     "rgba(56, 189, 248, 0.5)";
-                  (e.currentTarget as HTMLButtonElement).style.background =
+                  (e.currentTarget as HTMLAnchorElement).style.background =
                     "rgba(15, 23, 42, 0.95)";
                 }}
                 onMouseOut={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor =
+                  (e.currentTarget as HTMLAnchorElement).style.borderColor =
                     "rgba(51, 65, 85, 0.6)";
-                  (e.currentTarget as HTMLButtonElement).style.background =
+                  (e.currentTarget as HTMLAnchorElement).style.background =
                     "rgba(3, 7, 18, 0.75)";
                 }}
               >
@@ -161,7 +170,7 @@ export default function TopFunctionsPanel({
                 >
                   in {item.files.length} file{item.files.length !== 1 ? "s" : ""}
                 </span>
-              </button>
+              </a>
             ))}
           </div>
         </div>
@@ -191,9 +200,13 @@ export default function TopFunctionsPanel({
             }}
           >
             {topHooks.map((item) => (
-              <button
+              <a
                 key={item.name}
-                onClick={() => onSelectFunction(item.name)}
+                href={buildRepoUrl(repoUrl, { func: item.name })}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onSelectFunction(item.name);
+                }}
                 style={{
                   textAlign: "left",
                   padding: "0.5rem 0.75rem",
@@ -204,18 +217,19 @@ export default function TopFunctionsPanel({
                   display: "flex",
                   flexDirection: "column",
                   gap: "0.2rem",
+                  textDecoration: "none",
                   transition: "border-color 0.2s, background 0.2s",
                 }}
                 onMouseOver={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor =
+                  (e.currentTarget as HTMLAnchorElement).style.borderColor =
                     "rgba(52, 211, 153, 0.6)";
-                  (e.currentTarget as HTMLButtonElement).style.background =
+                  (e.currentTarget as HTMLAnchorElement).style.background =
                     "rgba(15, 23, 42, 0.95)";
                 }}
                 onMouseOut={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor =
+                  (e.currentTarget as HTMLAnchorElement).style.borderColor =
                     "rgba(52, 211, 153, 0.3)";
-                  (e.currentTarget as HTMLButtonElement).style.background =
+                  (e.currentTarget as HTMLAnchorElement).style.background =
                     "rgba(3, 7, 18, 0.75)";
                 }}
               >
@@ -260,7 +274,7 @@ export default function TopFunctionsPanel({
                 >
                   in {item.files.length} file{item.files.length !== 1 ? "s" : ""}
                 </span>
-              </button>
+              </a>
             ))}
           </div>
         </div>

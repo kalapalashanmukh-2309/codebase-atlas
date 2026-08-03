@@ -736,6 +736,7 @@ function RepoPageInner() {
           {/* Most Used Functions & Hooks Panel */}
           {data.functionCounts && (
             <TopFunctionsPanel
+              repoUrl={repoUrl}
               functionCounts={data.functionCounts}
               onSelectFunction={handleSelectFunctionCall}
             />
