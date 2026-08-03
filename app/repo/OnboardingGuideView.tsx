@@ -5,6 +5,8 @@ import {
   getOnboardingGuideForRepo,
   getGuideProgress,
   toggleStepProgress,
+  getMissionProgress,
+  setStepCompleted,
   deleteGuide,
   type OnboardingGuide,
   type OnboardingStep,
@@ -42,7 +44,8 @@ export default function OnboardingGuideView({
     const g = getOnboardingGuideForRepo(repoUrl);
     setGuide(g);
     if (g) {
-      setCompletedStepIds(getGuideProgress(g.id));
+      const mission = getMissionProgress(repoUrl, g.id);
+      setCompletedStepIds(mission ? mission.completedSteps : getGuideProgress(g.id));
     } else {
       setCompletedStepIds([]);
     }
@@ -105,8 +108,10 @@ export default function OnboardingGuideView({
 
   function handleToggleStep(stepId: string) {
     if (!guide) return;
-    const updated = toggleStepProgress(guide.id, stepId);
-    setCompletedStepIds(updated);
+    const isDone = completedStepIds.includes(stepId);
+    setStepCompleted(repoUrl, guide.id, stepId, !isDone);
+    const mission = getMissionProgress(repoUrl, guide.id);
+    setCompletedStepIds(mission ? mission.completedSteps : []);
   }
 
   function handleDeleteGuide() {

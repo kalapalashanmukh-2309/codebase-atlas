@@ -28,6 +28,12 @@ export type OnboardingGuide = {
   createdAt: number;
 };
 
+export type MissionProgress = {
+  guideId: string;
+  completedSteps: string[]; // step ids
+  lastOpenedAt?: number;
+};
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -137,11 +143,102 @@ export function deleteGuide(id: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Onboarding Progress API
+// Onboarding Progress API (Mission Progress)
 // ---------------------------------------------------------------------------
+
+const MISSION_STORAGE_KEY = "codebase_atlas_mission_progress";
 
 function getProgressKey(guideId: string): string {
   return `codebase_atlas_onboarding_progress_${guideId}`;
+}
+
+function readMissionMap(): Record<string, MissionProgress> {
+  if (!isBrowser()) return {};
+  try {
+    const raw = localStorage.getItem(MISSION_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null) {
+      return parsed as Record<string, MissionProgress>;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function writeMissionMap(map: Record<string, MissionProgress>): void {
+  if (!isBrowser()) return;
+  try {
+    localStorage.setItem(MISSION_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    console.warn("[onboarding-guides] Failed to write mission progress to localStorage");
+  }
+}
+
+/**
+ * Returns mission progress for a specific repository URL and guide ID.
+ */
+export function getMissionProgress(repoUrl: string, guideId: string): MissionProgress | null {
+  if (!repoUrl || !guideId) return null;
+  const map = readMissionMap();
+  const key = `${repoUrl}::${guideId}`;
+  if (map[key]) return map[key];
+
+  // Fallback to legacy key if present
+  const legacySteps = getGuideProgress(guideId);
+  if (legacySteps.length > 0) {
+    return {
+      guideId,
+      completedSteps: legacySteps,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Marks a specific step completed or uncompleted for a guide in a repository.
+ */
+export function setStepCompleted(
+  repoUrl: string,
+  guideId: string,
+  stepId: string,
+  completed: boolean
+): void {
+  if (!repoUrl || !guideId || !stepId) return;
+
+  const map = readMissionMap();
+  const key = `${repoUrl}::${guideId}`;
+  const existing = map[key] || {
+    guideId,
+    completedSteps: [],
+    lastOpenedAt: Date.now(),
+  };
+
+  const stepsSet = new Set(existing.completedSteps);
+  if (completed) {
+    stepsSet.add(stepId);
+  } else {
+    stepsSet.delete(stepId);
+  }
+
+  const updatedSteps = Array.from(stepsSet);
+
+  map[key] = {
+    ...existing,
+    completedSteps: updatedSteps,
+    lastOpenedAt: Date.now(),
+  };
+
+  writeMissionMap(map);
+
+  // Sync legacy key for backward compatibility
+  try {
+    localStorage.setItem(getProgressKey(guideId), JSON.stringify(updatedSteps));
+  } catch {
+    // ignore
+  }
 }
 
 /**
