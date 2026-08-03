@@ -97,21 +97,21 @@ Guidelines:
 - Refer to specific file paths and function names when possible (e.g. \`src/command.ts\`, \`lib/parseOptions.ts\`).
 - Always try to propose 1–3 concrete next actions (files to open, docs pages to read, functions to inspect, flows to visualize).
 - If you are not sure about something based on the context, say that you don't have enough information instead of guessing.
-- Do NOT include any debug text, internal headings, or JSON in the natural-language answer. JSON for actions is returned separately in the structured output, not in the content field.
+- Do NOT include any debug text, internal headings, or JSON in the natural-language answer.
+- After you write your natural-language answer, output a JSON object on a NEW LINE starting with \`ACTIONS_JSON:\` and nothing else. Do NOT include the context in this object, only proposed actions.
+
+Example output format:
+In \`lib/command.js\`, command parsing is handled by... [normal answer text here]
+
+ACTIONS_JSON: {"actions":[{"label":"Focus command.js","payload":{"type":"focusFiles","data":{"files":["lib/command.js"]}}}]}
 
 Supported action types (return 1–3 in the \`actions\` array):
 - focusFiles: { label: "Focus command.js", payload: { type: "focusFiles", data: { files: ["lib/command.js"] } } }
 - showFunction: { label: "Inspect parseArgs()", payload: { type: "showFunction", data: { functionName: "parseArgs" } } }
 - openDocsPage: { label: "Open Overview doc", payload: { type: "openDocsPage", data: { slug: "overview" } } }
 - openFile: { label: "Open command.js", payload: { type: "openFile", data: { path: "lib/command.js" } } }
-- suggestQuestions: { label: "Follow-up questions", payload: { type: "suggestQuestions", data: { questions: ["Where is CLI options handled?"] } } }
-- startTour: { label: "Start guided tour", payload: { type: "startTour", data: {} } }
-
-Return a JSON object with keys:
-- content: (string answer following the guidelines above — no raw context, no debug text, no JSON fragments)
-- actions: (array of 1–3 action objects, or empty array [])
-
-Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
+- suggestQuestions: { label: "Follow-up questions", payload: { type: "suggestQuestions", data: { questions: ["Where are CLI options handled?"] } } }
+- startTour: { label: "Start guided tour", payload: { type: "startTour", data: {} } }`;
 
 export const CHANGE_PLANNER_PROMPT = `You are an expert change planning assistant for software repositories.
 You are given the repository context and a desired change or feature request from a developer.
@@ -282,9 +282,39 @@ ${funcIndexSummary ? `Function Index Summary:\n${funcIndexSummary}` : ""}
 }
 
 /**
- * Robustly parses LLM JSON response string.
+ * Robustly parses LLM response string (supports ACTIONS_JSON format and pure JSON).
  */
 function parseAgentJsonResponse(rawText: string): AgentResponse {
+  const actionsMarker = "ACTIONS_JSON:";
+  const markerIdx = rawText.indexOf(actionsMarker);
+
+  if (markerIdx !== -1) {
+    const naturalContent = rawText.slice(0, markerIdx).trim();
+    const jsonSubstring = rawText.slice(markerIdx + actionsMarker.length).trim();
+    let actions: AgentAction[] = [];
+
+    try {
+      let cleanJson = jsonSubstring;
+      if (cleanJson.startsWith("```json")) cleanJson = cleanJson.slice(7);
+      else if (cleanJson.startsWith("```")) cleanJson = cleanJson.slice(3);
+      if (cleanJson.endsWith("```")) cleanJson = cleanJson.slice(0, -3);
+
+      const parsed = JSON.parse(cleanJson.trim());
+      if (Array.isArray(parsed.actions)) {
+        actions = parsed.actions;
+      } else if (Array.isArray(parsed)) {
+        actions = parsed;
+      }
+    } catch (err) {
+      console.warn("[api/agent] Failed to parse ACTIONS_JSON part:", err);
+    }
+
+    return {
+      content: naturalContent,
+      actions,
+    };
+  }
+
   try {
     let cleanText = rawText.trim();
     if (cleanText.startsWith("```json")) {
@@ -485,7 +515,7 @@ export async function POST(request: Request) {
           generationConfig: {
             temperature: 0.2,
             maxOutputTokens: 2000,
-            response_mime_type: "application/json",
+            ...(isPRMode || isPlanningMode ? { response_mime_type: "application/json" } : {}),
           },
         }),
       }
