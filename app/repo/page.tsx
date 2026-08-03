@@ -584,6 +584,25 @@ function RepoPageInner() {
           >
             🗺️ Create guide
           </button>
+          <Link
+            href={`/explain?url=${encodeURIComponent(repoUrl)}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              padding: "0.5rem 0.85rem",
+              borderRadius: "6px",
+              background: "rgba(15, 23, 42, 0.85)",
+              border: "1px solid rgba(56, 189, 248, 0.25)",
+              color: "#38bdf8",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              textDecoration: "none",
+              fontFamily: "ui-monospace, monospace",
+            }}
+          >
+            🔍 Explain diff
+          </Link>
         </div>
       </header>
 

@@ -1,0 +1,468 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+
+const SAMPLE_DIFF = `diff --git a/lib/qa.ts b/lib/qa.ts
+index a1b2c3d..e5f6g7h 100644
+--- a/lib/qa.ts
++++ b/lib/qa.ts
+@@ -340,6 +340,12 @@ export async function answerQuestion(
++  // Detect function query intent from user question
++  const funcIntent = detectFunctionQueryIntent(input.question);
++  if (funcIntent) {
++    const definitions = getDefinitions(index, funcIntent.functionName);
++    const callSites = getCalls(index, funcIntent.functionName);
++  }
+`;
+
+function ExplainDiffInner() {
+  const searchParams = useSearchParams();
+  const initialRepoUrl = searchParams.get("url") || "";
+
+  const [diff, setDiff] = useState("");
+  const [repoUrl, setRepoUrl] = useState(initialRepoUrl);
+  const [prUrl, setPrUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState<string | null>(null);
+  const [affectedFiles, setAffectedFiles] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (initialRepoUrl) {
+      setRepoUrl(initialRepoUrl);
+    }
+  }, [initialRepoUrl]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!diff.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    setExplanation(null);
+
+    try {
+      const res = await fetch("/api/explain-diff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          diff: diff.trim(),
+          repoUrl: repoUrl.trim() || undefined,
+          prUrl: prUrl.trim() || undefined,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.error) {
+        setError(json.error || `Failed to explain diff (${res.status})`);
+      } else {
+        setExplanation(json.explanation);
+        setAffectedFiles(json.affectedFiles || []);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch diff explanation.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleLoadSample() {
+    setDiff(SAMPLE_DIFF.trim());
+  }
+
+  return (
+    <main
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "2rem",
+        padding: "3rem 2rem",
+        maxWidth: "56rem",
+        margin: "0 auto",
+        color: "#f8fafc",
+        minHeight: "100vh",
+      }}
+    >
+      {/* Top Navbar */}
+      <nav
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingBottom: "1rem",
+          borderBottom: "1px solid rgba(51, 65, 85, 0.4)",
+        }}
+      >
+        <Link
+          href="/"
+          style={{
+            color: "#38bdf8",
+            textDecoration: "none",
+            fontSize: "1rem",
+            fontWeight: 600,
+            fontFamily: "ui-monospace, monospace",
+          }}
+        >
+          ← Codebase Atlas
+        </Link>
+        <div style={{ display: "flex", gap: "1.25rem", alignItems: "center" }}>
+          <Link
+            href="/explain"
+            style={{
+              color: "#38bdf8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+            }}
+          >
+            🔍 Explain Diff
+          </Link>
+          <Link
+            href="/missions"
+            style={{
+              color: "#94a3b8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+            }}
+          >
+            🎯 Missions
+          </Link>
+          <Link
+            href="/onboarding"
+            style={{
+              color: "#94a3b8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+            }}
+          >
+            🗺️ Onboarding
+          </Link>
+          <Link
+            href="/saved"
+            style={{
+              color: "#94a3b8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+            }}
+          >
+            📌 Saved Views
+          </Link>
+          <Link
+            href="/docs"
+            style={{
+              color: "#94a3b8",
+              textDecoration: "none",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+            }}
+          >
+            📖 Docs
+          </Link>
+        </div>
+      </nav>
+
+      {/* Header section */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "1.75rem",
+            fontWeight: 800,
+            letterSpacing: "-0.02em",
+            background: "linear-gradient(135deg, #f8fafc 0%, #38bdf8 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+          }}
+        >
+          Explain Diff
+        </h1>
+        <p style={{ margin: 0, color: "#94a3b8", fontSize: "0.95rem" }}>
+          Paste a unified diff. Optionally include the repo URL for more context.
+        </p>
+      </div>
+
+      {/* Input Form Card */}
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "1.25rem",
+          padding: "1.5rem",
+          borderRadius: "12px",
+          background: "rgba(15, 23, 42, 0.85)",
+          backdropFilter: "blur(12px)",
+          border: "1px solid rgba(56, 189, 248, 0.25)",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+        }}
+      >
+        {/* Repo & PR URL Inputs */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <label
+              style={{
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                color: "#cbd5e1",
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              Repository URL (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repository"
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              style={{
+                padding: "0.6rem 0.85rem",
+                borderRadius: "6px",
+                background: "rgba(3, 7, 18, 0.8)",
+                border: "1px solid rgba(51, 65, 85, 0.6)",
+                color: "#f8fafc",
+                fontSize: "0.85rem",
+                fontFamily: "ui-monospace, monospace",
+                outline: "none",
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <label
+              style={{
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                color: "#cbd5e1",
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              Pull Request URL (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repository/pull/42"
+              value={prUrl}
+              onChange={(e) => setPrUrl(e.target.value)}
+              style={{
+                padding: "0.6rem 0.85rem",
+                borderRadius: "6px",
+                background: "rgba(3, 7, 18, 0.8)",
+                border: "1px solid rgba(51, 65, 85, 0.6)",
+                color: "#f8fafc",
+                fontSize: "0.85rem",
+                fontFamily: "ui-monospace, monospace",
+                outline: "none",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Diff Textarea */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <label
+              style={{
+                fontSize: "0.78rem",
+                fontWeight: 600,
+                color: "#cbd5e1",
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              Unified Diff Patch *
+            </label>
+
+            <button
+              type="button"
+              onClick={handleLoadSample}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#38bdf8",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+                fontFamily: "ui-monospace, monospace",
+                textDecoration: "underline",
+              }}
+            >
+              Load Sample Diff
+            </button>
+          </div>
+
+          <textarea
+            rows={10}
+            placeholder={`diff --git a/lib/qa.ts b/lib/qa.ts\n--- a/lib/qa.ts\n+++ b/lib/qa.ts\n@@ -10,3 +10,4 @@\n+ // add new feature`}
+            value={diff}
+            onChange={(e) => setDiff(e.target.value)}
+            style={{
+              padding: "0.75rem",
+              borderRadius: "6px",
+              background: "rgba(3, 7, 18, 0.9)",
+              border: "1px solid rgba(51, 65, 85, 0.6)",
+              color: "#38bdf8",
+              fontSize: "0.85rem",
+              fontFamily: "ui-monospace, SFMono-Regular, monospace",
+              lineHeight: 1.5,
+              resize: "vertical",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={loading || !diff.trim()}
+          style={{
+            alignSelf: "flex-end",
+            padding: "0.6rem 1.4rem",
+            borderRadius: "6px",
+            background: loading || !diff.trim() ? "#334155" : "#38bdf8",
+            color: loading || !diff.trim() ? "#94a3b8" : "#0f172a",
+            fontWeight: 700,
+            fontSize: "0.88rem",
+            border: "none",
+            cursor: loading || !diff.trim() ? "not-allowed" : "pointer",
+            fontFamily: "ui-monospace, monospace",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          {loading ? "Analyzing diff..." : "🔍 Explain Diff"}
+        </button>
+      </form>
+
+      {/* Error state banner */}
+      {error && (
+        <div
+          style={{
+            padding: "1rem 1.25rem",
+            borderRadius: "8px",
+            background: "#450a0a",
+            border: "1px solid #991b1b",
+            color: "#fca5a5",
+            fontSize: "0.9rem",
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* Loading banner */}
+      {loading && (
+        <div
+          style={{
+            padding: "1.5rem",
+            borderRadius: "8px",
+            background: "rgba(15, 23, 42, 0.75)",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            color: "#38bdf8",
+            fontFamily: "ui-monospace, monospace",
+            fontSize: "0.9rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
+          }}
+        >
+          <span>⏳ Analyzing diff and generating explanation…</span>
+        </div>
+      )}
+
+      {/* Explanation Results Container */}
+      {explanation && (
+        <div
+          style={{
+            padding: "1.5rem",
+            borderRadius: "12px",
+            background: "rgba(15, 23, 42, 0.9)",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1rem",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingBottom: "0.75rem",
+              borderBottom: "1px solid rgba(51, 65, 85, 0.4)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ fontSize: "1.2rem" }}>✨</span>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: "1.05rem",
+                  fontWeight: 700,
+                  color: "#38bdf8",
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                AI Diff Explanation
+              </h3>
+            </div>
+
+            {affectedFiles.length > 0 && (
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  padding: "0.15rem 0.45rem",
+                  borderRadius: "4px",
+                  background: "rgba(56, 189, 248, 0.12)",
+                  color: "#38bdf8",
+                  border: "1px solid rgba(56, 189, 248, 0.25)",
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                {affectedFiles.length} file{affectedFiles.length !== 1 ? "s" : ""} modified
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.65,
+              fontSize: "0.95rem",
+              color: "#e2e8f0",
+            }}
+          >
+            {explanation}
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
+export default function ExplainDiffPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            padding: "3rem",
+            textAlign: "center",
+            color: "#38bdf8",
+            fontFamily: "ui-monospace, monospace",
+          }}
+        >
+          Loading Explain Diff…
+        </div>
+      }
+    >
+      <ExplainDiffInner />
+    </Suspense>
+  );
+}
