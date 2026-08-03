@@ -2,8 +2,8 @@
  * POST /api/agent
  *
  * Repo-aware conversational agent endpoint.
- * Supports standard navigation queries, "Plan a Change" mode, and "Explain this PR" mode.
- * Returns structured responses with AgentActions, ChangePlans, and PRExplanations.
+ * Supports standard navigation queries, "Plan a Change" mode, "Explain this PR" mode,
+ * and "Agent-Driven Guided Tour" mode returning structured Tour workflows.
  */
 
 import {
@@ -40,10 +40,22 @@ export interface PRExplanation {
   risks: string[];
 }
 
+export interface TourStep {
+  title: string;
+  summary: string;
+  focusFiles?: string[];
+  docsSlug?: string;
+  suggestedQuestions: string[];
+}
+
+export interface Tour {
+  steps: TourStep[];
+}
+
 export interface AgentAction {
   label: string;
   payload: {
-    type: "focusFiles" | "showFunction" | "openDocsPage" | "suggestQuestions" | "focusStepFiles" | "openFile";
+    type: "focusFiles" | "showFunction" | "openDocsPage" | "suggestQuestions" | "focusStepFiles" | "openFile" | "startTour";
     data: any;
   };
 }
@@ -54,6 +66,7 @@ export interface AgentChatMessage {
   actions?: AgentAction[];
   changePlan?: ChangePlan;
   prExplanation?: PRExplanation;
+  tour?: Tour;
 }
 
 export interface AgentRequest {
@@ -66,6 +79,7 @@ export interface AgentResponse {
   actions?: AgentAction[];
   changePlan?: ChangePlan;
   prExplanation?: PRExplanation;
+  tour?: Tour;
 }
 
 export const AGENT_SYSTEM_PROMPT = `You are a codebase navigator agent.
@@ -111,6 +125,14 @@ Return a JSON object with:
 Do NOT include markdown formatting or backticks around the JSON. Return ONLY raw JSON.`;
 
 /**
+ * Detects whether a user message requests a guided tour.
+ */
+function isGuidedTourIntent(userText: string): boolean {
+  const lower = userText.toLowerCase().trim();
+  return lower.includes("guided tour") || lower.includes("start tour") || lower === "/tour";
+}
+
+/**
  * Detects whether a user message expresses intent to plan a code change.
  */
 function isChangePlanIntent(userText: string): boolean {
@@ -147,6 +169,60 @@ function isPRExplainIntent(userText: string): boolean {
 }
 
 /**
+ * Generates an initial agent-driven guided tour derived from repo files and docs pages.
+ */
+function deriveGuidedTour(repoUrl: string, files: string[], docsPages: DocsPage[]): Tour {
+  const sampleFiles = files.slice(0, 15);
+  const coreFiles = sampleFiles.filter((f) => !f.includes("test") && !f.includes("spec"));
+  const primaryFiles = coreFiles.length > 0 ? coreFiles : files.slice(0, 5);
+
+  const steps: TourStep[] = [
+    {
+      title: "1. Repository Overview & Entry Points",
+      summary: `Welcome to the guided tour of ${repoUrl}. This step covers the high-level architecture, primary entry points, and directory layout.`,
+      focusFiles: primaryFiles.slice(0, 3),
+      docsSlug: "overview",
+      suggestedQuestions: [
+        "What is the main purpose of this repo?",
+        "Where are the core entry points located?",
+      ],
+    },
+    {
+      title: "2. Core Logic & Main Modules",
+      summary: "Explore the core execution pipeline, key function definitions, and primary business logic files.",
+      focusFiles: primaryFiles.slice(1, 5),
+      docsSlug: docsPages[1]?.slug || "overview",
+      suggestedQuestions: [
+        "How do core modules interact with each other?",
+        "What are the most used functions in this codebase?",
+      ],
+    },
+    {
+      title: "3. API Routes, Services & Integration",
+      summary: "Understand how requests, external integrations, or CLI commands are processed across sub-modules.",
+      focusFiles: primaryFiles.slice(2, 6),
+      docsSlug: docsPages[2]?.slug || "overview",
+      suggestedQuestions: [
+        "Where are external requests or CLI commands handled?",
+        "How is error handling structured?",
+      ],
+    },
+    {
+      title: "4. Tests, Utilities & Architecture Wrap-Up",
+      summary: "Conclude the tour by reviewing utility helpers, unit test suites, and overall architectural patterns.",
+      focusFiles: files.filter((f) => f.includes("test") || f.includes("util")).slice(0, 4),
+      docsSlug: "overview",
+      suggestedQuestions: [
+        "How are unit tests structured?",
+        "What edge cases should reviewers watch out for?",
+      ],
+    },
+  ];
+
+  return { steps };
+}
+
+/**
  * Builds a compact, factual repository context summary string.
  */
 function buildAgentContextSummary(
@@ -165,21 +241,12 @@ function buildAgentContextSummary(
     .map((f) => `${f.name} (${f.count} calls)`)
     .join(", ");
 
-  const funcIndexSummary = Object.entries(analysis.functionIndex || {})
-    .slice(0, 8)
-    .map(
-      ([name, detail]) =>
-        `${name}: defined in ${detail.definitions[0]?.file || "unknown"}, ${detail.callCount} calls`
-    )
-    .join("\n");
-
   return `=== REPOSITORY ANALYSIS CONTEXT ===
 Repository URL: ${repoUrl}
 Total TypeScript/JavaScript Files: ${fileCount}
 Key Modules / Folders: ${folders.join(", ") || "Root level"}
 Sample Files: ${sampleFiles.join(", ")}
 ${topFuncs ? `Top Functions: ${topFuncs}` : ""}
-${funcIndexSummary ? `Function Index Summary:\n${funcIndexSummary}` : ""}
 ===================================`;
 }
 
@@ -201,13 +268,15 @@ function parseAgentJsonResponse(rawText: string): AgentResponse {
     const parsed = JSON.parse(cleanText.trim());
 
     const isPR = parsed.affectedModules && Array.isArray(parsed.affectedModules);
-    const isPlan = parsed.steps && Array.isArray(parsed.steps);
+    const isPlan = parsed.steps && Array.isArray(parsed.steps) && !parsed.steps[0]?.summary;
+    const isTour = parsed.steps && Array.isArray(parsed.steps) && parsed.steps[0]?.summary;
 
     return {
       content: typeof parsed.content === "string" ? parsed.content : typeof parsed.summary === "string" ? parsed.summary : rawText,
       actions: Array.isArray(parsed.actions) ? parsed.actions : [],
       changePlan: isPlan ? (parsed as ChangePlan) : undefined,
       prExplanation: isPR ? (parsed as PRExplanation) : undefined,
+      tour: isTour ? (parsed as Tour) : undefined,
     };
   } catch {
     return {
@@ -247,16 +316,21 @@ export async function POST(request: Request) {
 
   const recentMessages = messages.slice(-10);
   const lastUserMessage = recentMessages.filter((m) => m.role === "user").pop()?.content || "";
-  const isPRMode = isPRExplainIntent(lastUserMessage);
-  const isPlanningMode = !isPRMode && isChangePlanIntent(lastUserMessage);
+  const isTourMode = isGuidedTourIntent(lastUserMessage);
+  const isPRMode = !isTourMode && isPRExplainIntent(lastUserMessage);
+  const isPlanningMode = !isTourMode && !isPRMode && isChangePlanIntent(lastUserMessage);
   const apiKey = process.env.GEMINI_API_KEY;
 
   // 1. Fetch & compute repository analysis context
   let contextSummary = `Repository URL: ${repoUrl}`;
+  let analysisFiles: string[] = [];
+  let docsPages: DocsPage[] = [];
+
   try {
     const { owner, repo } = parseGitHubUrl(repoUrl);
     const tree = await fetchRepoTree(owner, repo);
     const analysis = buildAnalyzeResult(tree);
+    analysisFiles = analysis.files;
 
     const sampleFiles = analysis.files.slice(0, 15);
     const snippetPromises = sampleFiles.map(async (filePath) => {
@@ -274,16 +348,25 @@ export async function POST(request: Request) {
       analysis.functionIndex = buildFunctionIndexRecord(fetchedFiles);
     }
 
-    const docsPages = getDocsPagesForRepo(repoUrl);
+    docsPages = getDocsPagesForRepo(repoUrl);
     contextSummary = buildAgentContextSummary(repoUrl, analysis, docsPages);
   } catch (err) {
     console.warn("[api/agent] Unable to fetch deep analysis context:", err);
   }
 
+  // Handle Guided Tour request immediately
+  if (isTourMode) {
+    const tour = deriveGuidedTour(repoUrl, analysisFiles, docsPages);
+    return Response.json({
+      content: `Welcome to the Agent-Driven Guided Tour of ${repoUrl}! Click through the steps below to explore key modules, docs, and focus files step by step.`,
+      tour,
+      actions: [],
+    } satisfies AgentResponse);
+  }
+
   // 2. Offline fallback handling if no API key is configured
   if (!apiKey) {
     if (isPRMode) {
-      // Extract file paths from diff regex
       const fileMatches = Array.from(
         lastUserMessage.matchAll(/(?:---|\+\+\+)\s+[ab]\/(.+)/g)
       ).map((m) => m[1]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { AgentAction, ChangePlan, PRExplanation } from "@/app/api/agent/route";
+import type { AgentAction, ChangePlan, PRExplanation, Tour, TourStep } from "@/app/api/agent/route";
 
 // ---------------------------------------------------------------------------
 // Types & Props
@@ -15,6 +15,7 @@ export interface AgentMessage {
   actions?: AgentAction[];
   changePlan?: ChangePlan;
   prExplanation?: PRExplanation;
+  tour?: Tour;
 }
 
 interface RepoAgentChatProps {
@@ -45,28 +46,26 @@ export default function RepoAgentChat({
       id: "welcome",
       role: "assistant",
       content:
-        "Hello! I am your Autonomous Codebase Agent. Ask me to explain a PR (e.g. \"Explain this PR\"), plan a change (e.g. \"I want to add rate limiting\"), or inspect modules.",
+        "Hello! I am your Autonomous Codebase Agent. Ask me to explain a PR, plan a change, or start an interactive guided tour.",
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       }),
       actions: [
         {
-          label: "📖 Open Overview docs",
-          payload: { type: "openDocsPage", data: { slug: "overview" } },
+          label: "🚩 Start guided tour",
+          payload: { type: "startTour", data: {} },
         },
         {
-          label: "❓ Suggested questions",
-          payload: {
-            type: "suggestQuestions",
-            data: { questions: ["Explain this PR", "I want to add rate limiting"] },
-          },
+          label: "📖 Open Overview docs",
+          payload: { type: "openDocsPage", data: { slug: "overview" } },
         },
       ],
     },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [tourStepIndex, setTourStepIndex] = useState(0);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -75,6 +74,11 @@ export default function RepoAgentChat({
 
   function handleActionClick(action: AgentAction) {
     const { type, data } = action.payload;
+
+    if (type === "startTour") {
+      handleSend(undefined, "Start guided tour");
+      return;
+    }
 
     if (type === "focusFiles" && onFocusFiles) {
       const fileList = Array.isArray(data?.files) ? data.files : typeof data === "string" ? [data] : [];
@@ -143,6 +147,11 @@ export default function RepoAgentChat({
       const replyActions = Array.isArray(json.actions) ? json.actions : [];
       const replyChangePlan = json.changePlan as ChangePlan | undefined;
       const replyPRExplanation = json.prExplanation as PRExplanation | undefined;
+      const replyTour = json.tour as Tour | undefined;
+
+      if (replyTour) {
+        setTourStepIndex(0);
+      }
 
       const botMsg: AgentMessage = {
         id: (Date.now() + 1).toString(),
@@ -155,6 +164,7 @@ export default function RepoAgentChat({
         actions: replyActions,
         changePlan: replyChangePlan,
         prExplanation: replyPRExplanation,
+        tour: replyTour,
       };
 
       setMessages((prev) => [...prev, botMsg]);
@@ -179,7 +189,7 @@ export default function RepoAgentChat({
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "560px",
+        height: "580px",
         borderRadius: "12px",
         background: "rgba(15, 23, 42, 0.85)",
         backdropFilter: "blur(12px)",
@@ -200,7 +210,7 @@ export default function RepoAgentChat({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-          <span style={{ fontSize: "1.2rem" }}>🤖</span>
+          <span style={{ fontSize: "1.2rem" }}>🚩</span>
           <div>
             <h3
               style={{
@@ -211,7 +221,7 @@ export default function RepoAgentChat({
                 fontFamily: "ui-monospace, monospace",
               }}
             >
-              Repo Agent & PR Explainer
+              Repo Agent & Guided Tour
             </h3>
             <span
               style={{
@@ -220,25 +230,31 @@ export default function RepoAgentChat({
                 fontFamily: "ui-monospace, monospace",
               }}
             >
-              PR Explainer & Change Planning • {files.length} codebase files
+              Guided Walkthrough • {files.length} codebase files
             </span>
           </div>
         </div>
 
-        <span
+        <button
+          onClick={() => handleSend(undefined, "Start guided tour")}
+          disabled={sending}
           style={{
-            fontSize: "0.7rem",
-            padding: "0.15rem 0.45rem",
-            borderRadius: "4px",
+            fontSize: "0.72rem",
+            padding: "0.3rem 0.65rem",
+            borderRadius: "5px",
             background: "rgba(251, 191, 36, 0.15)",
             color: "#fbbf24",
-            border: "1px solid rgba(251, 191, 36, 0.3)",
+            border: "1px solid rgba(251, 191, 36, 0.4)",
             fontWeight: 700,
             fontFamily: "ui-monospace, monospace",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.3rem",
           }}
         >
-          AGENT READY
-        </span>
+          🚩 Start Guided Tour
+        </button>
       </div>
 
       {/* Messages Scroll Area */}
@@ -283,6 +299,173 @@ export default function RepoAgentChat({
                 }}
               >
                 {msg.content}
+
+                {/* Structured Guided Tour Card */}
+                {!isUser && msg.tour && msg.tour.steps && msg.tour.steps.length > 0 && (
+                  (() => {
+                    const currentStep: TourStep = msg.tour.steps[tourStepIndex] || msg.tour.steps[0];
+                    const isFirst = tourStepIndex === 0;
+                    const isLast = tourStepIndex === msg.tour.steps.length - 1;
+
+                    return (
+                      <div
+                        style={{
+                          marginTop: "0.85rem",
+                          padding: "1rem",
+                          borderRadius: "8px",
+                          background: "rgba(3, 7, 18, 0.8)",
+                          border: "1px solid rgba(251, 191, 36, 0.45)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.85rem",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                            <span style={{ fontSize: "1rem" }}>🚩</span>
+                            <strong style={{ color: "#fbbf24", fontSize: "0.88rem", fontFamily: "ui-monospace, monospace" }}>
+                              Guided Tour • Step {tourStepIndex + 1} of {msg.tour.steps.length}
+                            </strong>
+                          </div>
+                          <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontFamily: "ui-monospace, monospace" }}>
+                            {Math.round(((tourStepIndex + 1) / msg.tour.steps.length) * 100)}% Complete
+                          </span>
+                        </div>
+
+                        {/* Step Title & Summary */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                          <h4 style={{ margin: 0, fontSize: "0.92rem", color: "#38bdf8", fontWeight: 700 }}>
+                            {currentStep.title}
+                          </h4>
+                          <p style={{ margin: 0, fontSize: "0.83rem", color: "#e2e8f0", lineHeight: 1.5 }}>
+                            {currentStep.summary}
+                          </p>
+                        </div>
+
+                        {/* Step Action Buttons */}
+                        <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                          {currentStep.focusFiles && currentStep.focusFiles.length > 0 && (
+                            <button
+                              onClick={() => onFocusFiles && onFocusFiles(currentStep.focusFiles!)}
+                              style={{
+                                padding: "0.22rem 0.6rem",
+                                borderRadius: "4px",
+                                background: "rgba(56, 189, 248, 0.15)",
+                                border: "1px solid rgba(56, 189, 248, 0.4)",
+                                color: "#38bdf8",
+                                fontSize: "0.74rem",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                fontFamily: "ui-monospace, monospace",
+                              }}
+                            >
+                              🎯 Show focused files ({currentStep.focusFiles.length})
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => onOpenDocsPage && onOpenDocsPage(currentStep.docsSlug || "overview")}
+                            style={{
+                              padding: "0.22rem 0.6rem",
+                              borderRadius: "4px",
+                              background: "rgba(52, 211, 153, 0.15)",
+                              border: "1px solid rgba(52, 211, 153, 0.4)",
+                              color: "#34d399",
+                              fontSize: "0.74rem",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontFamily: "ui-monospace, monospace",
+                            }}
+                          >
+                            📖 Open docs ({currentStep.docsSlug || "overview"})
+                          </button>
+                        </div>
+
+                        {/* Suggested Questions for Step */}
+                        {currentStep.suggestedQuestions && currentStep.suggestedQuestions.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                            <span style={{ fontSize: "0.72rem", color: "#fbbf24", fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>
+                              ❓ Try these questions:
+                            </span>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                              {currentStep.suggestedQuestions.map((qText, qIdx) => (
+                                <button
+                                  key={qIdx}
+                                  onClick={() => handleSend(undefined, qText)}
+                                  style={{
+                                    padding: "0.25rem 0.55rem",
+                                    borderRadius: "4px",
+                                    background: "rgba(251, 191, 36, 0.12)",
+                                    border: "1px solid rgba(251, 191, 36, 0.3)",
+                                    color: "#fbbf24",
+                                    fontSize: "0.74rem",
+                                    cursor: "pointer",
+                                    fontFamily: "ui-monospace, monospace",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  {qText}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tour Step Controls */}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            marginTop: "0.4rem",
+                            paddingTop: "0.5rem",
+                            borderTop: "1px solid rgba(51, 65, 85, 0.5)",
+                          }}
+                        >
+                          <button
+                            disabled={isFirst}
+                            onClick={() => setTourStepIndex((prev) => Math.max(0, prev - 1))}
+                            style={{
+                              padding: "0.3rem 0.75rem",
+                              borderRadius: "5px",
+                              background: isFirst ? "rgba(51, 65, 85, 0.3)" : "rgba(30, 41, 59, 0.9)",
+                              border: "1px solid rgba(148, 163, 184, 0.3)",
+                              color: isFirst ? "#64748b" : "#f8fafc",
+                              fontSize: "0.76rem",
+                              fontWeight: 600,
+                              cursor: isFirst ? "not-allowed" : "pointer",
+                              fontFamily: "ui-monospace, monospace",
+                            }}
+                          >
+                            ← Previous Step
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              if (!isLast) {
+                                setTourStepIndex((prev) => prev + 1);
+                              } else {
+                                handleSend(undefined, "I finished the guided tour!");
+                              }
+                            }}
+                            style={{
+                              padding: "0.3rem 0.75rem",
+                              borderRadius: "5px",
+                              background: isLast ? "#34d399" : "#fbbf24",
+                              border: "none",
+                              color: "#0f172a",
+                              fontSize: "0.76rem",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              fontFamily: "ui-monospace, monospace",
+                            }}
+                          >
+                            {isLast ? "Finish Tour 🎉" : "Next Step →"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
 
                 {/* Structured PR Explanation Card */}
                 {!isUser && msg.prExplanation && (
@@ -719,7 +902,7 @@ export default function RepoAgentChat({
               fontFamily: "ui-monospace, monospace",
             }}
           >
-            <span>⏳ Agent is analyzing PR / diff request…</span>
+            <span>⏳ Agent is generating guided tour step…</span>
           </div>
         )}
 
@@ -739,7 +922,7 @@ export default function RepoAgentChat({
       >
         <input
           type="text"
-          placeholder="Explain this PR, plan a change, or ask a question..."
+          placeholder="Start guided tour, explain PR, or ask questions..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
