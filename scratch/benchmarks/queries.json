@@ -1,0 +1,20 @@
+[
+  {
+    "id": "query-001",
+    "category": "feature-localization",
+    "query": "I have an issue with orders and payment processing",
+    "description": "User asking about order creation, persistence, and notification dispatch"
+  },
+  {
+    "id": "query-002",
+    "category": "bug-investigation",
+    "query": "Where is user authentication and session validation implemented?",
+    "description": "User asking about auth flow, token verification, and session storage"
+  },
+  {
+    "id": "query-003",
+    "category": "architecture-overview",
+    "query": "How is routing and API request handling structured across modules?",
+    "description": "User asking about router setup, controllers, and middleware"
+  }
+]

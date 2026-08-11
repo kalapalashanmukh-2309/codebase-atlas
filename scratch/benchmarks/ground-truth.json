@@ -1,0 +1,58 @@
+{
+  "query-001": {
+    "queryId": "query-001",
+    "top1Entity": "OrderController.create",
+    "relevantEntities": [
+      "OrderController.create",
+      "OrderService.createOrder",
+      "OrderRepository.save",
+      "NotificationService.sendNotification",
+      "EmailProvider.send"
+    ],
+    "nonKeywordEntities": [
+      "NotificationService.sendNotification",
+      "EmailProvider.send"
+    ],
+    "relevantFiles": [
+      "src/orders/OrderController.ts",
+      "src/orders/OrderService.ts",
+      "src/orders/OrderRepository.ts",
+      "src/notifications/NotificationService.ts",
+      "src/notifications/EmailProvider.ts"
+    ]
+  },
+  "query-002": {
+    "queryId": "query-002",
+    "top1Entity": "AuthService.validateToken",
+    "relevantEntities": [
+      "AuthService.validateToken",
+      "UserRepository.findUser",
+      "SessionStore.getSession"
+    ],
+    "nonKeywordEntities": [
+      "SessionStore.getSession"
+    ],
+    "relevantFiles": [
+      "src/auth/AuthService.ts",
+      "src/users/UserRepository.ts",
+      "src/session/SessionStore.ts"
+    ]
+  },
+  "query-003": {
+    "queryId": "query-003",
+    "top1Entity": "AppRouter.setup",
+    "relevantEntities": [
+      "AppRouter.setup",
+      "Middleware.authGuard",
+      "BaseController.handle"
+    ],
+    "nonKeywordEntities": [
+      "BaseController.handle"
+    ],
+    "relevantFiles": [
+      "src/router/AppRouter.ts",
+      "src/middleware/AuthGuard.ts",
+      "src/core/BaseController.ts"
+    ]
+  }
+}
