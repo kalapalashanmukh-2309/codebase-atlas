@@ -18,7 +18,8 @@ import {
   type FileIntelligence,
 } from "./code-intel";
 
-import { type BuiltGraph, traverseTransitiveNeighborhood } from "./graph-builder";
+import { type BuiltGraph, buildGraph, traverseTransitiveNeighborhood } from "./graph-builder";
+import { enrichGraphNodes, type EnrichedCodeNode } from "./semantic-enricher";
 
 export interface Snippet {
   path: string;
@@ -363,13 +364,7 @@ export async function answerQuestion(
     if (funcIntent && functionName) {
       return buildDeterministicFunctionResponse(functionName, definitions, callSites);
     }
-    return {
-      answer: "GEMINI_API_KEY is not configured. Please add it to your environment variables to enable Q&A.",
-      referencedFiles: [],
-      focusFiles: [],
-      isFlowQuestion: false,
-      codeSnippets: [],
-    };
+    return buildDeterministicSubgraphResponse(input);
   }
 
   const userPrompt = buildUserPrompt(
@@ -402,7 +397,7 @@ export async function answerQuestion(
       if (funcIntent && functionName) {
         return buildDeterministicFunctionResponse(functionName, definitions, callSites);
       }
-      return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
+      return buildDeterministicSubgraphResponse(input);
     }
 
     const data = (await res.json()) as GeminiResponse;
@@ -412,7 +407,7 @@ export async function answerQuestion(
       if (funcIntent && functionName) {
         return buildDeterministicFunctionResponse(functionName, definitions, callSites);
       }
-      return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
+      return buildDeterministicSubgraphResponse(input);
     }
 
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
@@ -429,7 +424,7 @@ export async function answerQuestion(
     if (funcIntent && functionName) {
       return buildDeterministicFunctionResponse(functionName, definitions, callSites);
     }
-    return { answer: FALLBACK_ANSWER, referencedFiles: [], focusFiles: [], isFlowQuestion: false, codeSnippets: [] };
+    return buildDeterministicSubgraphResponse(input);
   }
 }
 
@@ -479,6 +474,114 @@ function buildDeterministicFunctionResponse(
     functionName,
     definitions,
     callSites,
+  };
+}
+
+/**
+ * Generates a rich, deterministic out-of-the-box response using AST entity tags
+ * and graph neighborhood traversal when Gemini API key is offline or unconfigured.
+ */
+function buildDeterministicSubgraphResponse(
+  input: AskQuestionInput
+): QaResult {
+  const { question, snippets, builtGraph } = input;
+  const qLower = question.toLowerCase();
+
+  // 1. Build & enrich graph nodes with layer & domain tags
+  const graph = builtGraph || buildGraph(snippets, "detailed");
+  const enrichedNodes = enrichGraphNodes(graph.nodes);
+
+  // 2. Identify target matching entities (by name, path, or layer/domain tags)
+  const matchedNodes = enrichedNodes.filter((n) => {
+    if (n.type === "folder") return false;
+    const nameLower = n.name.toLowerCase();
+    const pathLower = n.path.toLowerCase();
+    const terms = qLower.split(/\s+/).filter((t) => t.length > 2);
+    const isNameMatch = terms.some((term) => nameLower.includes(term) || pathLower.includes(term));
+    const isDomainMatch = n.semantic.domains.some((d) => qLower.includes(d));
+    return isNameMatch || isDomainMatch;
+  });
+
+  const seedNodes = matchedNodes.length > 0 ? matchedNodes : enrichedNodes.filter((n) => n.type === "file").slice(0, 5);
+  const seedIds = seedNodes.map((n) => n.id);
+
+  // 3. Transitive neighborhood expansion (up to 2 hops)
+  const relevanceList = traverseTransitiveNeighborhood(graph, seedIds, 2);
+  const connectedNodeIds = Array.from(new Set(relevanceList.map((r) => r.entityId)));
+
+  const connectedNodes = enrichedNodes.filter((n) => connectedNodeIds.includes(n.id) || seedIds.includes(n.id));
+
+  // 4. Categorize files & nodes by Architecture Layer Tags
+  const layerGroups: Record<string, EnrichedCodeNode[]> = {};
+  const refFilesSet = new Set<string>();
+
+  for (const node of connectedNodes) {
+    if (node.type !== "folder") {
+      refFilesSet.add(node.path);
+      const layer = node.semantic.layer;
+      if (!layerGroups[layer]) layerGroups[layer] = [];
+      layerGroups[layer].push(node);
+    }
+  }
+
+  if (refFilesSet.size === 0) {
+    snippets.slice(0, 5).forEach((s) => refFilesSet.add(s.path));
+  }
+
+  const referencedFiles = Array.from(refFilesSet);
+  const focusFiles = referencedFiles.slice(0, 6);
+
+  // 5. Build structured Markdown answer text
+  const answerLines: string[] = [];
+  answerLines.push(`### 🔍 Subgraph Code Intelligence for: *"${question}"*`);
+  answerLines.push(`> **AST Entity Retrieval & Neighborhood Expansion** (Identified **${connectedNodes.length} code entities** across **${referencedFiles.length} files**)\n`);
+
+  answerLines.push(`#### 📦 Architectural Layer & Domain Tags`);
+  for (const [layer, nodes] of Object.entries(layerGroups)) {
+    const layerLabel =
+      layer === "frontend" ? "🎨 Frontend UI" :
+      layer === "backend" ? "⚙️ Backend Service" :
+      layer === "auth-security" ? "🔒 Auth & Security" :
+      layer === "routing" ? "🚦 Routing & Middleware" :
+      layer === "types" ? "🔷 Types & Interfaces" : "📄 Core Module";
+
+    answerLines.push(`- **${layerLabel}**:`);
+    for (const node of nodes.slice(0, 6)) {
+      const domainsTag = node.semantic.domains.length > 0 ? ` \`[${node.semantic.domains.join(", ")}]\`` : "";
+      const lineStr = node.startLine ? ` *(lines ${node.startLine}–${node.endLine || node.startLine})*` : "";
+      answerLines.push(`  - \`${node.name}\`${domainsTag} in \`${node.path}\`${lineStr}`);
+    }
+  }
+
+  if (relevanceList.length > 0) {
+    answerLines.push(`\n#### 🔗 Transitive Dependency Neighborhood`);
+    for (let i = 0; i < Math.min(6, relevanceList.length); i++) {
+      const rel = relevanceList[i];
+      const cleanPath = rel.path.map((p) => p.split("::").pop()).join(" ➔ ");
+      answerLines.push(`- **Hop ${rel.distance}**: \`${cleanPath}\``);
+    }
+  }
+
+  // Build Code Snippets
+  const codeSnippets: QaCodeSnippet[] = [];
+  for (const s of snippets.slice(0, 3)) {
+    if (refFilesSet.has(s.path)) {
+      const lineCount = s.content.split("\n").length;
+      codeSnippets.push({
+        file: s.path,
+        lines: [1, Math.min(25, lineCount)],
+        code: s.content.slice(0, 800),
+      });
+    }
+  }
+
+  return {
+    answer: answerLines.join("\n"),
+    referencedFiles,
+    focusFiles,
+    summary: `Identified ${connectedNodes.length} code entities and dependency neighborhood for "${question}"`,
+    isFlowQuestion: isFlowQuestion(question),
+    codeSnippets,
   };
 }
 
