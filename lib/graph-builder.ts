@@ -71,9 +71,79 @@ export interface CodeEdge {
   target: string;
   type: RelationshipType;
   label?: string;
+  resolution?: {
+    status: "verified" | "inferred" | "unresolved";
+    method: "ast" | "symbol-resolution" | "type-resolution";
+  };
+  evidence?: {
+    file: string;
+    lineStart: number;
+    lineEnd: number;
+    sourceSnippet?: string;
+  };
   // Backward compatibility fields for react-force-graph
   from: string;
   to: string;
+}
+
+export interface TransitiveRelevance {
+  entityId: string;
+  seedEntityId: string;
+  distance: number;
+  path: string[];
+}
+
+/**
+ * Traverses graph relationships up to maxDistance hops to track transitive relevance paths.
+ */
+export function traverseTransitiveNeighborhood(
+  graph: BuiltGraph,
+  seedEntityIds: string[],
+  maxDistance = 2
+): TransitiveRelevance[] {
+  const result: TransitiveRelevance[] = [];
+  const visited = new Map<string, { distance: number; path: string[]; seed: string }>();
+
+  for (const seedId of seedEntityIds) {
+    const found = graph.nodes.find((n) => n.id === seedId || n.path === seedId);
+    const targetId = found ? found.id : seedId;
+    visited.set(targetId, { distance: 0, path: [targetId], seed: targetId });
+  }
+
+  let currentLevel = Array.from(visited.keys());
+
+  for (let dist = 1; dist <= maxDistance; dist++) {
+    const nextLevel: string[] = [];
+
+    for (const sourceId of currentLevel) {
+      const sourceState = visited.get(sourceId)!;
+
+      for (const edge of graph.edges) {
+        let neighborId: string | null = null;
+        if (edge.source === sourceId) neighborId = edge.target;
+        else if (edge.target === sourceId) neighborId = edge.source;
+
+        if (neighborId && !visited.has(neighborId)) {
+          const path = [...sourceState.path, neighborId];
+          visited.set(neighborId, { distance: dist, path, seed: sourceState.seed });
+          nextLevel.push(neighborId);
+        }
+      }
+    }
+
+    currentLevel = nextLevel;
+  }
+
+  for (const [entityId, info] of visited.entries()) {
+    result.push({
+      entityId,
+      seedEntityId: info.seed,
+      distance: info.distance,
+      path: info.path,
+    });
+  }
+
+  return result;
 }
 
 // Backward compatibility type aliases
