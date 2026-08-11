@@ -18,9 +18,7 @@ import {
   type FileIntelligence,
 } from "./code-intel";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { type BuiltGraph, traverseTransitiveNeighborhood } from "./graph-builder";
 
 export interface Snippet {
   path: string;
@@ -34,6 +32,7 @@ export interface AskQuestionInput {
   files: string[];
   snippets: Snippet[];
   codeIndex?: CodeIndex;
+  builtGraph?: BuiltGraph;
 }
 
 export interface QaCodeSnippet {
@@ -533,6 +532,21 @@ Target Function: \`${funcContext.functionName}\`
     } else {
       prompt += `Call Sites: None found in indexed files.\n\n`;
     }
+  }
+
+  if (input.builtGraph) {
+    const seedFiles = snippets.map((s) => s.path);
+    const relevanceList = traverseTransitiveNeighborhood(input.builtGraph, seedFiles, 2);
+
+    prompt += `### RETRIEVAL EVIDENCE PAYLOAD\n`;
+    prompt += `Query: "${question}"\n\n`;
+    prompt += `#### Relevant Entities & Transitive Paths (Top ${Math.min(15, relevanceList.length)}):\n`;
+
+    for (let i = 0; i < Math.min(15, relevanceList.length); i++) {
+      const rel = relevanceList[i];
+      prompt += `${i + 1}. ${rel.entityId} (distance: ${rel.distance}, path: ${rel.path.join(" -> ")})\n`;
+    }
+    prompt += "\n";
   }
 
   const fileListLimit = 40;

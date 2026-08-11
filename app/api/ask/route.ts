@@ -12,6 +12,7 @@ import {
   fetchFileContent,
 } from "@/lib/github";
 import { answerQuestion } from "@/lib/qa";
+import { buildGraph } from "@/lib/graph-builder";
 
 export async function POST(request: Request) {
   let body: { repoUrl?: string; question?: string };
@@ -56,18 +57,20 @@ export async function POST(request: Request) {
       (s): s is { path: string; content: string } => s !== null
     );
 
-    // 5. Extract top-level folder names
+    // 5. Build fine-grained entity graph & extract top-level folder names
+    const builtGraph = buildGraph(snippets, "detailed");
     const folders = analysis.graph.nodes
       .filter((n) => n.type === "folder")
       .map((n) => n.label);
 
-    // 6. Generate AI answer
+    // 6. Generate AI answer with Subgraph Evidence Payload
     const result = await answerQuestion({
       repoUrl,
       question: question.trim(),
       folders,
       files: analysis.files,
       snippets,
+      builtGraph,
     });
 
     return Response.json({
