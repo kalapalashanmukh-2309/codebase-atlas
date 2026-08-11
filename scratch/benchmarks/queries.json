@@ -16,5 +16,47 @@
     "category": "architecture-overview",
     "query": "How is routing and API request handling structured across modules?",
     "description": "User asking about router setup, controllers, and middleware"
+  },
+  {
+    "id": "query-004",
+    "category": "notification-dispatch",
+    "query": "Where are email delivery and user notifications triggered?",
+    "description": "User asking about email provider and notification dispatchers"
+  },
+  {
+    "id": "query-005",
+    "category": "user-management",
+    "query": "How is user data queried from the repository database?",
+    "description": "User asking about user repository and database access"
+  },
+  {
+    "id": "query-006",
+    "category": "security-guard",
+    "query": "Where are request authorization checks and guards enforced?",
+    "description": "User asking about middleware guard checks"
+  },
+  {
+    "id": "query-007",
+    "category": "session-management",
+    "query": "How are session tokens validated and retrieved?",
+    "description": "User asking about session store token lookup"
+  },
+  {
+    "id": "query-008",
+    "category": "order-persistence",
+    "query": "Where are order records saved to the database layer?",
+    "description": "User asking about OrderRepository save logic"
+  },
+  {
+    "id": "query-009",
+    "category": "controller-dispatch",
+    "query": "Where is HTTP controller handling initialized?",
+    "description": "User asking about BaseController and OrderController"
+  },
+  {
+    "id": "query-010",
+    "category": "end-to-end-flow",
+    "query": "Trace the execution from order request to email delivery",
+    "description": "User asking about full order -> notification -> email chain"
   }
 ]

@@ -179,6 +179,7 @@ async function runBenchmark() {
   printMetricRow("Noise Ratio (Lower=Better)", [evalA.noiseRatio, evalB.noiseRatio, evalC.noiseRatio, evalD.noiseRatio], true);
   printMetricRow("Non-Keyword Recall (PRIMARY)", [evalA.nonKeywordEntityRecall, evalB.nonKeywordEntityRecall, evalC.nonKeywordEntityRecall, evalD.nonKeywordEntityRecall], true);
   printMetricRow("Avg Token Cost", [evalA.avgTokenCost, evalB.avgTokenCost, evalC.avgTokenCost, evalD.avgTokenCost], false);
+  printMetricRow("Diagnosis Success Rate", [evalA.diagnosisSuccessRate, evalB.diagnosisSuccessRate, evalC.diagnosisSuccessRate, evalD.diagnosisSuccessRate], true);
   console.log("--------------------------------------------------------------------------------------------------\n");
 }
 

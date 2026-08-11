@@ -1,7 +1,7 @@
 /**
  * scratch/benchmarks/evaluate.ts
  *
- * Evaluator script computing the 7 mathematical research metrics for
+ * Evaluator script computing the complete 7 mathematical research metrics for
  * System A (Keyword Search), System B (Vector RAG), System C (Entity Graph Traversal),
  * and System D (Hybrid System) against ground truth annotations.
  */
@@ -19,12 +19,13 @@ export interface RetrievalResult {
 
 export interface MetricEvaluation {
   systemName: string;
-  top1Accuracy: number; // 0.0 - 1.0
-  top5Recall: number;   // 0.0 - 1.0
-  relevantFileRecall: number; // 0.0 - 1.0
-  noiseRatio: number;   // 0.0 - 1.0
-  nonKeywordEntityRecall: number; // 0.0 - 1.0 (PRIMARY METRIC)
-  avgTokenCost: number;
+  top1Accuracy: number;           // Metric 1: 0.0 - 1.0
+  top5Recall: number;             // Metric 2: 0.0 - 1.0
+  relevantFileRecall: number;     // Metric 3: 0.0 - 1.0
+  noiseRatio: number;             // Metric 4: 0.0 - 1.0
+  nonKeywordEntityRecall: number; // Metric 5: 0.0 - 1.0 (PRIMARY METRIC)
+  avgTokenCost: number;           // Metric 6: Tokens
+  diagnosisSuccessRate: number;   // Metric 7: 0.0 - 1.0 (Top-3 contains root cause)
 }
 
 export function evaluateSystemResults(
@@ -37,6 +38,7 @@ export function evaluateSystemResults(
   let totalNoiseRatio = 0;
   let totalNonKeywordRecall = 0;
   let totalTokens = 0;
+  let diagnosisSuccessCount = 0;
 
   const totalQueries = results.length;
   if (totalQueries === 0) {
@@ -48,6 +50,7 @@ export function evaluateSystemResults(
       noiseRatio: 0,
       nonKeywordEntityRecall: 0,
       avgTokenCost: 0,
+      diagnosisSuccessRate: 0,
     };
   }
 
@@ -83,6 +86,12 @@ export function evaluateSystemResults(
 
     // 6. Token Cost
     totalTokens += res.tokenCost;
+
+    // 7. Diagnosis Success Rate (Top-3 contains ground-truth top1 entity)
+    const top3Retrieved = res.retrievedEntities.slice(0, 3);
+    if (top3Retrieved.includes(truth.top1Entity)) {
+      diagnosisSuccessCount += 1;
+    }
   }
 
   return {
@@ -93,6 +102,7 @@ export function evaluateSystemResults(
     noiseRatio: totalNoiseRatio / totalQueries,
     nonKeywordEntityRecall: totalNonKeywordRecall / totalQueries,
     avgTokenCost: totalTokens / totalQueries,
+    diagnosisSuccessRate: diagnosisSuccessCount / totalQueries,
   };
 }
 

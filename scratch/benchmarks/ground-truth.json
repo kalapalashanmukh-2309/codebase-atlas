@@ -43,7 +43,7 @@
     "top1Entity": "AppRouter.setup",
     "relevantEntities": [
       "AppRouter.setup",
-      "Middleware.authGuard",
+      "AuthGuard.check",
       "BaseController.handle"
     ],
     "nonKeywordEntities": [
@@ -53,6 +53,118 @@
       "src/router/AppRouter.ts",
       "src/middleware/AuthGuard.ts",
       "src/core/BaseController.ts"
+    ]
+  },
+  "query-004": {
+    "queryId": "query-004",
+    "top1Entity": "NotificationService.sendNotification",
+    "relevantEntities": [
+      "NotificationService.sendNotification",
+      "EmailProvider.send"
+    ],
+    "nonKeywordEntities": [
+      "EmailProvider.send"
+    ],
+    "relevantFiles": [
+      "src/notifications/NotificationService.ts",
+      "src/notifications/EmailProvider.ts"
+    ]
+  },
+  "query-005": {
+    "queryId": "query-005",
+    "top1Entity": "UserRepository.findUser",
+    "relevantEntities": [
+      "UserRepository.findUser",
+      "AuthService.validateToken"
+    ],
+    "nonKeywordEntities": [
+      "AuthService.validateToken"
+    ],
+    "relevantFiles": [
+      "src/users/UserRepository.ts",
+      "src/auth/AuthService.ts"
+    ]
+  },
+  "query-006": {
+    "queryId": "query-006",
+    "top1Entity": "AuthGuard.check",
+    "relevantEntities": [
+      "AuthGuard.check",
+      "AppRouter.setup"
+    ],
+    "nonKeywordEntities": [
+      "AppRouter.setup"
+    ],
+    "relevantFiles": [
+      "src/middleware/AuthGuard.ts",
+      "src/router/AppRouter.ts"
+    ]
+  },
+  "query-007": {
+    "queryId": "query-007",
+    "top1Entity": "SessionStore.getSession",
+    "relevantEntities": [
+      "SessionStore.getSession",
+      "AuthService.validateToken"
+    ],
+    "nonKeywordEntities": [
+      "AuthService.validateToken"
+    ],
+    "relevantFiles": [
+      "src/session/SessionStore.ts",
+      "src/auth/AuthService.ts"
+    ]
+  },
+  "query-008": {
+    "queryId": "query-008",
+    "top1Entity": "OrderRepository.save",
+    "relevantEntities": [
+      "OrderRepository.save",
+      "OrderService.createOrder"
+    ],
+    "nonKeywordEntities": [
+      "OrderService.createOrder"
+    ],
+    "relevantFiles": [
+      "src/orders/OrderRepository.ts",
+      "src/orders/OrderService.ts"
+    ]
+  },
+  "query-009": {
+    "queryId": "query-009",
+    "top1Entity": "BaseController.handle",
+    "relevantEntities": [
+      "BaseController.handle",
+      "OrderController.create",
+      "AppRouter.setup"
+    ],
+    "nonKeywordEntities": [
+      "AppRouter.setup"
+    ],
+    "relevantFiles": [
+      "src/core/BaseController.ts",
+      "src/orders/OrderController.ts",
+      "src/router/AppRouter.ts"
+    ]
+  },
+  "query-010": {
+    "queryId": "query-010",
+    "top1Entity": "OrderController.create",
+    "relevantEntities": [
+      "OrderController.create",
+      "OrderService.createOrder",
+      "NotificationService.sendNotification",
+      "EmailProvider.send"
+    ],
+    "nonKeywordEntities": [
+      "NotificationService.sendNotification",
+      "EmailProvider.send"
+    ],
+    "relevantFiles": [
+      "src/orders/OrderController.ts",
+      "src/orders/OrderService.ts",
+      "src/notifications/NotificationService.ts",
+      "src/notifications/EmailProvider.ts"
     ]
   }
 }
