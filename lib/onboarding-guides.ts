@@ -7,15 +7,13 @@
  * All localStorage access is guarded for SSR safety.
  */
 
-// ---------------------------------------------------------------------------
-// Data Model
-// ---------------------------------------------------------------------------
+import { type GraphMode } from "./graph-builder";
 
 export type OnboardingStep = {
   id: string;
   title: string; // e.g. "Auth flow"
   description?: string;
-  graphMode: "high-level" | "detailed";
+  graphMode: GraphMode;
   focusFiles?: string[];
   suggestedQuestions: string[]; // 2–4 questions
 };

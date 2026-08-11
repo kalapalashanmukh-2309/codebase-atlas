@@ -37,9 +37,9 @@ export function normalizeRepoQuery(repoUrl: string, state?: RepoViewState): URLS
   const params = new URLSearchParams();
   params.set("url", repoUrl.trim());
 
-  // 1. Omit default "high-level" graph mode; set "graph" parameter only if "detailed"
-  if (state?.graphMode === "detailed") {
-    params.set("graph", "detailed");
+  // 1. Omit default "high-level" graph mode; set "graph" parameter if non-default
+  if (state?.graphMode && state.graphMode !== "high-level") {
+    params.set("graph", state.graphMode);
   }
 
   // 2. Single focus file
@@ -99,10 +99,11 @@ export function parseRepoViewState(
   const rawUrl = searchParams.get("url");
   const repoUrl = rawUrl ? decodeURIComponent(rawUrl.trim()) : null;
 
-  // 1. Validate graph mode ("high-level" | "detailed")
+  // 1. Validate graph mode ("high-level" | "detailed" | "call-graph" | "focused")
   const rawGraph = searchParams.get("graph");
+  const validModes = new Set<GraphMode>(["high-level", "detailed", "call-graph", "focused"]);
   const graphMode: GraphMode =
-    rawGraph === "detailed" || rawGraph === "high-level" ? rawGraph : "high-level";
+    rawGraph && validModes.has(rawGraph as GraphMode) ? (rawGraph as GraphMode) : "high-level";
 
   // 2. Validate single focusFile
   const rawFocusFile = searchParams.get("focusFile");

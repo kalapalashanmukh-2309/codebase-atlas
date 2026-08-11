@@ -2,17 +2,48 @@
 
 import { useMemo, useState, useCallback, useRef } from "react";
 import ForceGraph3D from "react-force-graph-3d";
-import type { GraphNode, GraphEdge } from "@/lib/github";
+import type { CodeNode, CodeEdge, NodeType } from "@/lib/graph-builder";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 export interface Graph3DProps {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  nodes: CodeNode[];
+  edges: CodeEdge[];
   highlightedFiles?: string[];
-  onNodeClick?: (nodeId: string, nodeType: "file" | "folder" | "workspace") => void;
+  onNodeClick?: (nodeId: string, nodeType: NodeType) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Helper Color Functions
+// ---------------------------------------------------------------------------
+
+function getNodeColor(node: CodeNode, isFocused: boolean): string {
+  if (isFocused) return "#fbbf24";
+  switch (node.type) {
+    case "workspace":
+      return "#c084fc";
+    case "folder":
+      return "#64748b";
+    case "file":
+      return node.isImportant ? "#34d399" : node.isLowValue ? "#475569" : "#38bdf8";
+    case "class":
+      return "#a855f7";
+    case "interface":
+      return "#06b6d4";
+    case "function":
+      return "#10b981";
+    case "method":
+      return "#eab308";
+    case "component":
+      return "#f97316";
+    case "variable":
+    case "constant":
+      return "#94a3b8";
+    default:
+      return "#38bdf8";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -25,35 +56,26 @@ export default function Graph3DInner({
   highlightedFiles = [],
   onNodeClick,
 }: Graph3DProps) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [hoverNode, setHoverNode] = useState<any>(null);
 
   const highlightedSet = useMemo(() => new Set(highlightedFiles), [highlightedFiles]);
 
-  // Convert nodes & edges to 3d-force-graph format
   const graphData = useMemo(() => {
     const validNodeIds = new Set(nodes.map((n) => n.id));
 
     const formattedNodes = nodes.map((n) => {
       const isFocused = highlightedSet.has(n.id);
-      let color = "#94a3b8"; // default file color
-
-      if (isFocused) {
-        color = "#38bdf8"; // bright cyan highlight
-      } else if (n.type === "workspace") {
-        color = "#a855f7"; // purple workspace
-      } else if (n.type === "folder") {
-        color = "#818cf8"; // indigo folder
-      } else if (n.isImportant) {
-        color = "#fbbf24"; // amber important file
-      }
+      const color = getNodeColor(n, isFocused);
 
       return {
         id: n.id,
-        name: n.label,
+        name: n.label || n.name,
         type: n.type,
         color,
-        val: n.type === "workspace" ? 8 : n.type === "folder" ? 5 : 2.5,
+        val: n.type === "workspace" ? 8 : n.type === "class" ? 7 : n.type === "folder" ? 5 : 3,
         isFocused,
       };
     });
@@ -63,15 +85,18 @@ export default function Graph3DInner({
       .map((e) => ({
         source: e.from,
         target: e.to,
+        type: e.type,
       }));
 
     return { nodes: formattedNodes, links: formattedLinks };
   }, [nodes, edges, highlightedSet]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleNodeHover = useCallback((node: any) => {
     setHoverNode(node || null);
   }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleNodeClick = useCallback(
     (node: any) => {
       if (node && onNodeClick) {
@@ -93,15 +118,15 @@ export default function Graph3DInner({
         border: "1px solid rgba(56, 189, 248, 0.2)",
       }}
     >
-      {/* 3D Force Graph */}
       <ForceGraph3D
         ref={fgRef}
         graphData={graphData}
         backgroundColor="#030712"
-        nodeColor={(node: any) =>
-          hoverNode && hoverNode.id === node.id ? "#38bdf8" : node.color
-        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        nodeColor={(node: any) => (hoverNode && hoverNode.id === node.id ? "#38bdf8" : node.color)}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         nodeVal={(node: any) => (hoverNode && hoverNode.id === node.id ? node.val * 1.5 : node.val)}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         nodeLabel={(node: any) =>
           `<div style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); padding: 4px 8px; border-radius: 4px; color: #f8fafc; font-family: monospace; font-size: 12px;">
             <strong style="color: ${node.color};">${node.type.toUpperCase()}</strong>: ${node.name}
@@ -122,7 +147,6 @@ export default function Graph3DInner({
         showNavInfo={false}
       />
 
-      {/* Hover Info Overlay */}
       {hoverNode && (
         <div
           style={{
@@ -150,7 +174,6 @@ export default function Graph3DInner({
         </div>
       )}
 
-      {/* Control Hints */}
       <div
         style={{
           position: "absolute",
@@ -159,15 +182,15 @@ export default function Graph3DInner({
           zIndex: 10,
           padding: "0.4rem 0.7rem",
           borderRadius: "6px",
-          background: "rgba(15, 23, 42, 0.75)",
-          border: "1px solid rgba(51, 65, 85, 0.5)",
+          background: "rgba(15, 23, 42, 0.8)",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
           color: "#94a3b8",
           fontSize: "0.75rem",
           fontFamily: "ui-monospace, monospace",
           pointerEvents: "none",
         }}
       >
-        Left-drag to rotate • Scroll to zoom • Right-drag to pan
+        Left Click: Rotate | Right Click: Pan | Scroll: Zoom
       </div>
     </div>
   );

@@ -14,13 +14,15 @@ import { getOnboardingGuideForRepo, type OnboardingGuide } from "./onboarding-gu
 // Data Model
 // ---------------------------------------------------------------------------
 
+import { type GraphMode } from "./graph-builder";
+
 export type DocsPage = {
   id: string;
   repoUrl: string;
   slug: string; // e.g. "overview", "auth-flow"
   title: string;
   summary: string; // 1–3 sentences
-  graphMode: "high-level" | "detailed";
+  graphMode: GraphMode;
   focusFiles?: string[];
   suggestedQuestions: string[];
   order: number; // for sorting

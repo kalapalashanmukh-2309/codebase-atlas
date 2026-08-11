@@ -9,14 +9,14 @@
 
 // ---------------------------------------------------------------------------
 // Data Model
-// ---------------------------------------------------------------------------
+import { type GraphMode } from "./graph-builder";
 
 export type SavedView = {
   id: string;
   repoUrl: string;
   title: string;
   description?: string;
-  graphMode: "high-level" | "detailed";
+  graphMode: GraphMode;
   focusFiles?: string[];
   createdAt: number;
 };

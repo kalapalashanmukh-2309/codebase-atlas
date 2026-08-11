@@ -31,12 +31,36 @@ export type CallInfo = {
   line: number;
 };
 
+export type EntityType =
+  | "class"
+  | "interface"
+  | "function"
+  | "method"
+  | "variable"
+  | "constant"
+  | "component";
+
+export type EntityInfo = {
+  type: EntityType;
+  name: string;
+  lineStart: number;
+  lineEnd: number;
+  isExport?: boolean;
+  parentEntityName?: string;
+  extendsNames?: string[];
+  implementsNames?: string[];
+  calls?: { calleeName: string; line: number }[];
+  creates?: { targetName: string; line: number }[];
+  returns?: { targetName: string; line: number }[];
+};
+
 export type LanguagePlugin = {
   name: string; // e.g. "typescript", "python", "go", "rust"
   fileFilter: (path: string) => boolean;
   extractImports?: (file: { path: string; content: string }) => string[];
   extractFunctions?: (file: { path: string; content: string }) => FunctionInfo[];
   extractCalls?: (file: { path: string; content: string }) => CallInfo[];
+  extractEntities?: (file: { path: string; content: string }) => EntityInfo[];
 };
 
 export type RepoLanguageHint = {
@@ -248,6 +272,230 @@ export const typescriptPlugin: LanguagePlugin = {
 
       visit(sourceFile);
       return calls;
+    } catch {
+      return [];
+    }
+  },
+
+  extractEntities: (file: { path: string; content: string }): EntityInfo[] => {
+    try {
+      const sourceFile = ts.createSourceFile(
+        file.path,
+        file.content,
+        ts.ScriptTarget.Latest,
+        true,
+        getScriptKind(file.path)
+      );
+
+      const entities: EntityInfo[] = [];
+      const isReactFile = file.path.endsWith(".tsx") || file.path.endsWith(".jsx");
+
+      function extractHeritage(node: ts.ClassDeclaration | ts.InterfaceDeclaration) {
+        const extendsNames: string[] = [];
+        const implementsNames: string[] = [];
+        if (node.heritageClauses) {
+          for (const clause of node.heritageClauses) {
+            const isImplements = clause.token === ts.SyntaxKind.ImplementsKeyword;
+            for (const typeNode of clause.types) {
+              let name: string | null = null;
+              if (ts.isIdentifier(typeNode.expression)) {
+                name = typeNode.expression.text;
+              } else if (
+                ts.isPropertyAccessExpression(typeNode.expression) &&
+                ts.isIdentifier(typeNode.expression.name)
+              ) {
+                name = typeNode.expression.name.text;
+              }
+              if (name) {
+                if (isImplements) {
+                  implementsNames.push(name);
+                } else {
+                  extendsNames.push(name);
+                }
+              }
+            }
+          }
+        }
+        return { extendsNames, implementsNames };
+      }
+
+      function inspectBody(bodyNode: ts.Node): {
+        calls: { calleeName: string; line: number }[];
+        creates: { targetName: string; line: number }[];
+        returns: { targetName: string; line: number }[];
+      } {
+        const calls: { calleeName: string; line: number }[] = [];
+        const creates: { targetName: string; line: number }[] = [];
+        const returns: { targetName: string; line: number }[] = [];
+
+        function walkBody(node: ts.Node) {
+          if (ts.isCallExpression(node)) {
+            const calleeName = extractCalleeName(node.expression);
+            if (calleeName) {
+              const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+              calls.push({ calleeName, line: line + 1 });
+            }
+          } else if (ts.isNewExpression(node)) {
+            let targetName: string | null = null;
+            if (ts.isIdentifier(node.expression)) {
+              targetName = node.expression.text;
+            } else if (
+              ts.isPropertyAccessExpression(node.expression) &&
+              ts.isIdentifier(node.expression.name)
+            ) {
+              targetName = node.expression.name.text;
+            }
+            if (targetName) {
+              const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+              creates.push({ targetName, line: line + 1 });
+            }
+          } else if (ts.isReturnStatement(node) && node.expression) {
+            let targetName: string | null = null;
+            if (ts.isIdentifier(node.expression)) {
+              targetName = node.expression.text;
+            } else if (
+              ts.isPropertyAccessExpression(node.expression) &&
+              ts.isIdentifier(node.expression.name)
+            ) {
+              targetName = node.expression.name.text;
+            }
+            if (targetName) {
+              const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+              returns.push({ targetName, line: line + 1 });
+            }
+          }
+          ts.forEachChild(node, walkBody);
+        }
+
+        walkBody(bodyNode);
+        return { calls, creates, returns };
+      }
+
+      function visit(node: ts.Node, parentClassName?: string) {
+        const isExport = hasExportModifier(node);
+
+        if (ts.isClassDeclaration(node) && node.name) {
+          const className = node.name.text;
+          const { line: lineStart } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+          const { line: lineEnd } = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+          const { extendsNames, implementsNames } = extractHeritage(node);
+
+          entities.push({
+            type: "class",
+            name: className,
+            lineStart: lineStart + 1,
+            lineEnd: lineEnd + 1,
+            isExport,
+            extendsNames,
+            implementsNames,
+          });
+
+          for (const member of node.members) {
+            visit(member, className);
+          }
+          return;
+        }
+
+        if (ts.isInterfaceDeclaration(node) && node.name) {
+          const interfaceName = node.name.text;
+          const { line: lineStart } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+          const { line: lineEnd } = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+          const { extendsNames } = extractHeritage(node);
+
+          entities.push({
+            type: "interface",
+            name: interfaceName,
+            lineStart: lineStart + 1,
+            lineEnd: lineEnd + 1,
+            isExport,
+            extendsNames,
+          });
+          return;
+        }
+
+        if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+          const methodName = node.name.text;
+          const { line: lineStart } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+          const { line: lineEnd } = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+          const { calls, creates, returns } = node.body ? inspectBody(node.body) : { calls: [], creates: [], returns: [] };
+
+          entities.push({
+            type: "method",
+            name: methodName,
+            lineStart: lineStart + 1,
+            lineEnd: lineEnd + 1,
+            isExport,
+            parentEntityName: parentClassName,
+            calls,
+            creates,
+            returns,
+          });
+          return;
+        }
+
+        if (ts.isFunctionDeclaration(node) && node.name) {
+          const fnName = node.name.text;
+          const { line: lineStart } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+          const { line: lineEnd } = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+          const isComponent = isReactFile && /^[A-Z]/.test(fnName);
+          const { calls, creates, returns } = node.body ? inspectBody(node.body) : { calls: [], creates: [], returns: [] };
+
+          entities.push({
+            type: isComponent ? "component" : "function",
+            name: fnName,
+            lineStart: lineStart + 1,
+            lineEnd: lineEnd + 1,
+            isExport,
+            calls,
+            creates,
+            returns,
+          });
+          return;
+        }
+
+        if (ts.isVariableStatement(node)) {
+          for (const decl of node.declarationList.declarations) {
+            if (ts.isIdentifier(decl.name)) {
+              const varName = decl.name.text;
+              const { line: lineStart } = sourceFile.getLineAndCharacterOfPosition(decl.getStart());
+              const { line: lineEnd } = sourceFile.getLineAndCharacterOfPosition(decl.getEnd());
+
+              if (
+                decl.initializer &&
+                (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))
+              ) {
+                const isComponent = isReactFile && /^[A-Z]/.test(varName);
+                const { calls, creates, returns } = inspectBody(decl.initializer);
+                entities.push({
+                  type: isComponent ? "component" : "function",
+                  name: varName,
+                  lineStart: lineStart + 1,
+                  lineEnd: lineEnd + 1,
+                  isExport,
+                  calls,
+                  creates,
+                  returns,
+                });
+              } else {
+                const isConst = (node.declarationList.flags & ts.NodeFlags.Const) !== 0;
+                entities.push({
+                  type: isConst ? "constant" : "variable",
+                  name: varName,
+                  lineStart: lineStart + 1,
+                  lineEnd: lineEnd + 1,
+                  isExport,
+                });
+              }
+            }
+          }
+          return;
+        }
+
+        ts.forEachChild(node, (child) => visit(child, parentClassName));
+      }
+
+      visit(sourceFile);
+      return entities;
     } catch {
       return [];
     }

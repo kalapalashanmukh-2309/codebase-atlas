@@ -1,46 +1,96 @@
 /**
  * lib/graph-builder.ts
  *
- * Graph builder helper for Codebase Atlas.
- * Transforms a list of TypeScript file paths into node and edge structures
- * for the interactive force graph in either "high-level" or "detailed" mode.
- * Supports monorepo workspace-level grouping and flow subgraphs.
+ * Entity-Level Code Graph builder for Codebase Atlas.
+ * Parses file paths, file contents, and function indices into fine-grained entity nodes
+ * (Files, Classes, Methods, Functions, Interfaces, Components, Variables) and typed
+ * relationship edges (contains, calls, extends, implements, creates, imports, returns).
+ * Supports four interactive graph lenses: "high-level", "detailed", "call-graph", "focused".
  */
 
 import { type MonorepoInfo } from "./monorepo";
+import { findLanguagePlugin, type EntityInfo } from "./language-plugins";
+import { type FunctionIndexRecord } from "./ast-intel";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types & Schema Specification
 // ---------------------------------------------------------------------------
 
-export type GraphMode = "high-level" | "detailed";
+export type GraphMode = "high-level" | "detailed" | "call-graph" | "focused";
 
-export interface GraphNode {
+export type NodeType =
+  | "repository"
+  | "workspace"
+  | "folder"
+  | "file"
+  | "class"
+  | "interface"
+  | "function"
+  | "method"
+  | "variable"
+  | "constant"
+  | "component";
+
+export type RelationshipType =
+  | "contains"
+  | "imports"
+  | "exports"
+  | "calls"
+  | "extends"
+  | "implements"
+  | "uses"
+  | "reads"
+  | "writes"
+  | "creates"
+  | "returns"
+  | "references";
+
+export interface CodeNode {
   id: string;
+  name: string;
   label: string;
-  type: "file" | "folder" | "workspace";
+  type: NodeType;
+  path: string;
+  parentId?: string;
+  startLine?: number;
+  endLine?: number;
+  language?: string;
   isImportant?: boolean;
   isLowValue?: boolean;
+  semantic?: {
+    domains?: string[];
+    features?: string[];
+    concepts?: string[];
+    confidence?: number;
+  };
 }
 
-export interface GraphEdge {
+export interface CodeEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: RelationshipType;
+  label?: string;
+  // Backward compatibility fields for react-force-graph
   from: string;
   to: string;
 }
 
+// Backward compatibility type aliases
+export type GraphNode = CodeNode;
+export type GraphEdge = CodeEdge;
+
 export interface BuiltGraph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  nodes: CodeNode[];
+  edges: CodeEdge[];
 }
 
+export type FileItemInput = string | { path: string; content?: string };
+
 // ---------------------------------------------------------------------------
-// Base Name Lists & Constants
+// Constants & Base Name Lists
 // ---------------------------------------------------------------------------
 
-/**
- * Base filenames (without extensions) considered central entry points.
- * In high-level mode, these are always preserved as standalone file nodes.
- */
 const IMPORTANT_BASE_NAMES = new Set([
   "index",
   "main",
@@ -60,10 +110,6 @@ const IMPORTANT_BASE_NAMES = new Set([
   "helpers",
 ]);
 
-/**
- * Deep utility module names that introduce visual noise when located deep
- * in the directory tree (depth >= 3).
- */
 const LOW_VALUE_DEEP_MODULE_NAMES = new Set([
   "utils",
   "helpers",
@@ -75,10 +121,6 @@ const LOW_VALUE_DEEP_MODULE_NAMES = new Set([
 // Helper Functions
 // ---------------------------------------------------------------------------
 
-/**
- * Returns the top-level folder name relative to scope (e.g., "components", "routes"),
- * or null if the file is at the scope root level.
- */
 export function getTopLevelFolder(filePath: string, scopePrefix = ""): string | null {
   const relative =
     scopePrefix && filePath.startsWith(scopePrefix)
@@ -88,12 +130,6 @@ export function getTopLevelFolder(filePath: string, scopePrefix = ""): string | 
   return segments.length > 1 ? segments[0] : null;
 }
 
-/**
- * RATIONALE for Important Files:
- * Keeps core entry points, routing, app setup, state stores, CLI tools, and config
- * modules visible as individual nodes even in high-level mode, allowing developers
- * to quickly locate key architectural anchors.
- */
 export function isImportantFile(filePath: string, scopePrefix = ""): boolean {
   const relative =
     scopePrefix && filePath.startsWith(scopePrefix)
@@ -101,28 +137,17 @@ export function isImportantFile(filePath: string, scopePrefix = ""): boolean {
       : filePath;
   const segments = relative.split("/");
   const filename = segments[segments.length - 1];
-
-  // Base name without extensions (e.g. "index.js" -> "index", "route.ts" -> "route")
   const baseName = filename.replace(/\.(tsx?|jsx?|mjs|cjs|d\.ts)$/, "").toLowerCase();
 
   if (IMPORTANT_BASE_NAMES.has(baseName)) {
     return true;
   }
-
-  // Additional Rule: index.* directly under src/ or repo root is always important
   if (baseName === "index" && segments.length === 1) {
     return true;
   }
-
   return false;
 }
 
-/**
- * RATIONALE for Low-Value Files:
- * Test files, type declaration files, and deeply nested utility/type modules
- * produce significant visual clutter without adding architectural insight.
- * Filtering them in high-level mode creates a clean topology focused on core modules.
- */
 export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
   const lower = filePath.toLowerCase();
   const relative =
@@ -133,7 +158,6 @@ export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
   const filename = segments[segments.length - 1];
   const baseName = filename.replace(/\.(tsx?|jsx?|mjs|cjs|d\.ts)$/, "").toLowerCase();
 
-  // 1. Test files (e.g. *.test.ts, *.spec.tsx, index.test-d.ts)
   if (
     lower.includes(".test.") ||
     lower.includes(".spec.") ||
@@ -142,7 +166,6 @@ export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
     return true;
   }
 
-  // Files in test/fixture directories (e.g., test/, tests/, __tests__/)
   if (
     segments.some(
       (s) =>
@@ -157,16 +180,11 @@ export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
     return true;
   }
 
-  // 2. Type declaration files (*.d.ts)
   if (lower.endsWith(".d.ts")) {
     return true;
   }
 
-  // 3. Deep utility/helper/type/constant files (depth >= 3, e.g. src/components/foo/utils.ts)
-  if (
-    LOW_VALUE_DEEP_MODULE_NAMES.has(baseName) &&
-    segments.length >= 3
-  ) {
+  if (LOW_VALUE_DEEP_MODULE_NAMES.has(baseName) && segments.length >= 3) {
     return true;
   }
 
@@ -174,326 +192,335 @@ export function isLowValueFile(filePath: string, scopePrefix = ""): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Main Builder Function
+// Main Entity-Level Graph Builder
 // ---------------------------------------------------------------------------
 
-/**
- * Builds nodes and edges for the dependency graph given a list of file paths.
- * Supports monorepo workspace-level grouping when monorepoInfo is provided.
- *
- * @param files List of TypeScript file paths in the repo
- * @param mode  "high-level" (folder/workspace collapsing & noise reduction) or "detailed"
- * @param monorepoInfo Monorepo info containing workspaces if detected
- */
 export function buildGraph(
-  files: string[],
-  mode: GraphMode,
-  monorepoInfo?: MonorepoInfo
+  filesInput: FileItemInput[],
+  mode: GraphMode = "high-level",
+  monorepoInfo?: MonorepoInfo,
+  functionIndex?: FunctionIndexRecord,
+  focusFiles?: string[]
 ): BuiltGraph {
-  // If repository is a monorepo, structure nodes and edges by workspace
-  if (monorepoInfo?.isMonorepo && monorepoInfo.workspaces && monorepoInfo.workspaces.length > 0) {
-    const nodeMap = new Map<string, GraphNode>();
-    const edgeSet = new Set<string>();
-    const edges: GraphEdge[] = [];
-
-    function addEdge(from: string, to: string) {
-      const key = `${from}->${to}`;
-      if (!edgeSet.has(key) && from !== to) {
-        edgeSet.add(key);
-        edges.push({ from, to });
-      }
+  const rawFilePaths = filesInput.map((f) => (typeof f === "string" ? f : f.path));
+  const fileContentMap = new Map<string, string>();
+  for (const f of filesInput) {
+    if (typeof f !== "string" && f.content) {
+      fileContentMap.set(f.path, f.content);
     }
+  }
 
-    // In high-level mode, filter workspaces to those containing source files to avoid cluttering with empty packages
+  const nodeMap = new Map<string, CodeNode>();
+  const edgeMap = new Map<string, CodeEdge>();
+
+  function addNode(node: CodeNode) {
+    if (!nodeMap.has(node.id)) {
+      nodeMap.set(node.id, node);
+    }
+  }
+
+  function addEdge(source: string, target: string, type: RelationshipType, label?: string) {
+    if (source === target) return;
+    const edgeId = `${source}-[${type}]->${target}`;
+    if (!edgeMap.has(edgeId)) {
+      edgeMap.set(edgeId, {
+        id: edgeId,
+        source,
+        target,
+        from: source,
+        to: target,
+        type,
+        label: label || type,
+      });
+    }
+  }
+
+  const hasSrc = rawFilePaths.some((f) => f.startsWith("src/"));
+  const scopePrefix = hasSrc ? "src/" : "";
+
+  // 1. Workspace / Folder structure base
+  if (monorepoInfo?.isMonorepo && monorepoInfo.workspaces && monorepoInfo.workspaces.length > 0) {
     const activeWorkspaces = mode === "high-level"
       ? monorepoInfo.workspaces.filter((w) => w.files.length > 0)
       : monorepoInfo.workspaces;
 
     const targetWorkspaces = activeWorkspaces.length > 0 ? activeWorkspaces : monorepoInfo.workspaces.slice(0, 15);
 
-    // Create a node for each active workspace
     for (const ws of targetWorkspaces) {
       const wsId = `workspace:${ws.path}`;
       const shortName = ws.name.replace(/^(packages|apps|modules|services|libs|projects)\//i, "");
-      nodeMap.set(wsId, {
+      addNode({
         id: wsId,
+        name: shortName,
         label: `📦 ${shortName}`,
         type: "workspace",
+        path: ws.path,
       });
     }
+  }
 
-    if (mode === "high-level") {
-      // High-level: Show workspace nodes + key entry files per workspace
-      for (const ws of targetWorkspaces) {
-        const wsId = `workspace:${ws.path}`;
-        const keyFiles = ws.files.filter(
-          (f) =>
-            isImportantFile(f) ||
-            f.endsWith("/index.ts") ||
-            f.endsWith("/index.tsx") ||
-            f.endsWith("/main.ts")
-        );
-        const displayFiles = keyFiles.length > 0 ? keyFiles.slice(0, 2) : ws.files.slice(0, 1);
+  // 2. High-Level Mode Lens (Folder / File architecture overview)
+  if (mode === "high-level") {
+    const filteredFiles = rawFilePaths.filter((f) => !isLowValueFile(f, scopePrefix));
 
-        for (const filePath of displayFiles) {
-          const filename = filePath.split("/").pop() || filePath;
-          if (!nodeMap.has(filePath)) {
-            nodeMap.set(filePath, {
-              id: filePath,
-              label: filename,
-              type: "file",
-              isImportant: isImportantFile(filePath),
-              isLowValue: isLowValueFile(filePath),
-            });
-          }
-          addEdge(wsId, filePath);
+    for (const filePath of filteredFiles) {
+      const topFolder = getTopLevelFolder(filePath, scopePrefix);
+      const relative = scopePrefix && filePath.startsWith(scopePrefix) ? filePath.slice(scopePrefix.length) : filePath;
+      const filename = relative.split("/").pop() || filePath;
+
+      let fileParentId: string | undefined = undefined;
+
+      if (topFolder !== null) {
+        const folderId = scopePrefix + topFolder;
+        fileParentId = folderId;
+        addNode({
+          id: folderId,
+          name: topFolder,
+          label: topFolder,
+          type: "folder",
+          path: folderId,
+        });
+
+        if (isImportantFile(filePath, scopePrefix)) {
+          addNode({
+            id: filePath,
+            name: filename,
+            label: filename,
+            type: "file",
+            path: filePath,
+            parentId: folderId,
+            isImportant: true,
+            isLowValue: false,
+          });
+          addEdge(folderId, filePath, "contains");
         }
+      } else {
+        addNode({
+          id: filePath,
+          name: filename,
+          label: filename,
+          type: "file",
+          path: filePath,
+          isImportant: isImportantFile(filePath, scopePrefix),
+          isLowValue: false,
+        });
       }
-    } else {
-      // Detailed: Show workspace nodes + member file nodes
-      for (const ws of targetWorkspaces) {
-        const wsId = `workspace:${ws.path}`;
-        for (const filePath of ws.files) {
-          const filename = filePath.split("/").pop() || filePath;
-          if (!nodeMap.has(filePath)) {
-            nodeMap.set(filePath, {
-              id: filePath,
-              label: filename,
-              type: "file",
-              isImportant: isImportantFile(filePath),
-              isLowValue: isLowValueFile(filePath),
-            });
-          }
-          addEdge(wsId, filePath);
-        }
-      }
-    }
-
-    // Inter-workspace edges between consecutive workspaces
-    const wsIds = targetWorkspaces.map((w) => `workspace:${w.path}`);
-    for (let i = 0; i < wsIds.length - 1; i++) {
-      addEdge(wsIds[i], wsIds[i + 1]);
     }
 
     const nodes = Array.from(nodeMap.values());
-    console.log(
-      `[lib/graph-builder] Monorepo Mode: "${mode}" | Workspaces: ${monorepoInfo.workspaces.length} => Nodes: ${nodes.length}, Edges: ${edges.length}`
-    );
+    const edges = Array.from(edgeMap.values());
+    if (nodes.length === 0 && rawFilePaths.length > 0) {
+      return buildGraph(filesInput, "detailed", monorepoInfo, functionIndex, focusFiles);
+    }
     return { nodes, edges };
   }
 
-  // --- Standard single-package repo graph building ---
-  const hasSrc = files.some((f) => f.startsWith("src/"));
-  const scopePrefix = hasSrc ? "src/" : "";
+  // 3. Detailed / Call-Graph / Focused Lenses: Extract AST entities
+  for (const filePath of rawFilePaths) {
+    const topFolder = getTopLevelFolder(filePath, scopePrefix);
+    const relative = scopePrefix && filePath.startsWith(scopePrefix) ? filePath.slice(scopePrefix.length) : filePath;
+    const filename = relative.split("/").pop() || filePath;
 
-  const nodeMap = new Map<string, GraphNode>();
-  const edgeSet = new Set<string>();
-  const edges: GraphEdge[] = [];
-
-  function addEdge(from: string, to: string) {
-    const key = `${from}->${to}`;
-    if (!edgeSet.has(key) && from !== to) {
-      edgeSet.add(key);
-      edges.push({ from, to });
+    let folderId: string | undefined;
+    if (topFolder !== null) {
+      folderId = scopePrefix + topFolder;
+      addNode({
+        id: folderId,
+        name: topFolder,
+        label: topFolder,
+        type: "folder",
+        path: folderId,
+      });
     }
-  }
 
-  if (mode === "high-level") {
-    const filtered = files.filter((f) => !isLowValueFile(f, scopePrefix));
+    // Always create File container node
+    addNode({
+      id: filePath,
+      name: filename,
+      label: filename,
+      type: "file",
+      path: filePath,
+      parentId: folderId,
+      isImportant: isImportantFile(filePath, scopePrefix),
+      isLowValue: isLowValueFile(filePath, scopePrefix),
+    });
 
-    for (const filePath of filtered) {
-      const topFolder = getTopLevelFolder(filePath, scopePrefix);
-      const relative =
-        scopePrefix && filePath.startsWith(scopePrefix)
-          ? filePath.slice(scopePrefix.length)
+    if (folderId) {
+      addEdge(folderId, filePath, "contains");
+    }
+
+    // Extract Entities using Language Plugin if content exists
+    const content = fileContentMap.get(filePath);
+    let extractedEntities: EntityInfo[] = [];
+
+    if (content) {
+      const plugin = findLanguagePlugin(filePath);
+      if (plugin?.extractEntities) {
+        extractedEntities = plugin.extractEntities({ path: filePath, content });
+      }
+    }
+
+    // Process extracted entities for detailed mode
+    if (extractedEntities.length > 0) {
+      for (const entity of extractedEntities) {
+        const entityId = `${filePath}::${entity.parentEntityName ? entity.parentEntityName + "." : ""}${entity.name}`;
+        const parentId = entity.parentEntityName
+          ? `${filePath}::${entity.parentEntityName}`
           : filePath;
-      const filename = relative.split("/").pop() || "";
 
-      if (topFolder !== null) {
-        const folderId = scopePrefix + topFolder;
+        let icon = "⚡";
+        if (entity.type === "class") icon = "🟣";
+        else if (entity.type === "interface") icon = "🔷";
+        else if (entity.type === "function") icon = "🔵";
+        else if (entity.type === "component") icon = "🧱";
 
-        if (!nodeMap.has(folderId)) {
-          nodeMap.set(folderId, {
-            id: folderId,
-            label: topFolder,
-            type: "folder",
-          });
-        }
+        addNode({
+          id: entityId,
+          name: entity.name,
+          label: `${icon} ${entity.name}`,
+          type: entity.type,
+          path: filePath,
+          parentId,
+          startLine: entity.lineStart,
+          endLine: entity.lineEnd,
+        });
 
-        if (isImportantFile(filePath, scopePrefix)) {
-          if (!nodeMap.has(filePath)) {
-            nodeMap.set(filePath, {
-              id: filePath,
-              label: filename,
-              type: "file",
-              isImportant: true,
-              isLowValue: false,
-            });
+        // Entity hierarchy edge (File contains Entity, or Class contains Method)
+        addEdge(parentId, entityId, "contains");
+
+        // Relationships: extends, implements
+        if (entity.extendsNames) {
+          for (const ext of entity.extendsNames) {
+            const targetId = `${filePath}::${ext}`;
+            addEdge(entityId, targetId, "extends");
           }
-          addEdge(folderId, filePath);
         }
-      } else {
-        if (!nodeMap.has(filePath)) {
-          nodeMap.set(filePath, {
-            id: filePath,
-            label: filename,
-            type: "file",
-            isImportant: isImportantFile(filePath, scopePrefix),
-            isLowValue: false,
-          });
-        }
-      }
-    }
-  } else {
-    for (const filePath of files) {
-      const topFolder = getTopLevelFolder(filePath, scopePrefix);
-      const relative =
-        scopePrefix && filePath.startsWith(scopePrefix)
-          ? filePath.slice(scopePrefix.length)
-          : filePath;
-      const filename = relative.split("/").pop() || "";
-
-      if (topFolder !== null) {
-        const folderId = scopePrefix + topFolder;
-
-        if (!nodeMap.has(folderId)) {
-          nodeMap.set(folderId, {
-            id: folderId,
-            label: topFolder,
-            type: "folder",
-          });
+        if (entity.implementsNames) {
+          for (const impl of entity.implementsNames) {
+            const targetId = `${filePath}::${impl}`;
+            addEdge(entityId, targetId, "implements");
+          }
         }
 
-        if (!nodeMap.has(filePath)) {
-          nodeMap.set(filePath, {
-            id: filePath,
-            label: filename,
-            type: "file",
-            isImportant: isImportantFile(filePath, scopePrefix),
-            isLowValue: isLowValueFile(filePath, scopePrefix),
-          });
+        // Relationships: creates
+        if (entity.creates) {
+          for (const cr of entity.creates) {
+            const targetId = `${filePath}::${cr.targetName}`;
+            addEdge(entityId, targetId, "creates");
+          }
         }
 
-        addEdge(folderId, filePath);
-      } else {
-        if (!nodeMap.has(filePath)) {
-          nodeMap.set(filePath, {
-            id: filePath,
-            label: filename,
-            type: "file",
-            isImportant: isImportantFile(filePath, scopePrefix),
-            isLowValue: isLowValueFile(filePath, scopePrefix),
-          });
+        // Relationships: calls
+        if (entity.calls) {
+          for (const call of entity.calls) {
+            const targetId = `${filePath}::${call.calleeName}`;
+            addEdge(entityId, targetId, "calls");
+          }
         }
       }
     }
   }
 
-  const nodes = Array.from(nodeMap.values());
+  // 4. Incorporate Function Index for Call Graphs & Cross-file Call Edges
+  if (functionIndex) {
+    for (const [funcName, record] of Object.entries(functionIndex)) {
+      for (const def of record.definitions) {
+        const entityId = `${def.file}::${funcName}`;
+        if (!nodeMap.has(entityId)) {
+          addNode({
+            id: entityId,
+            name: funcName,
+            label: `🔵 ${funcName}()`,
+            type: "function",
+            path: def.file,
+            parentId: def.file,
+            startLine: def.lineStart,
+            endLine: def.lineEnd,
+          });
+          addEdge(def.file, entityId, "contains");
+        }
+      }
 
-  if (mode === "high-level" && nodes.length === 0 && files.length > 0) {
-    return buildGraph(files, "detailed", monorepoInfo);
+      for (const site of record.callSites) {
+        if (site.callerFunction) {
+          const callerId = `${site.file}::${site.callerFunction}`;
+          const targetId = `${site.file}::${funcName}`;
+          if (nodeMap.has(callerId) && nodeMap.has(targetId)) {
+            addEdge(callerId, targetId, "calls");
+          }
+        }
+      }
+    }
   }
 
-  console.log(
-    `[lib/graph-builder] Mode: "${mode}" | Total input files: ${files.length} => Nodes: ${nodes.length}, Edges: ${edges.length}`
-  );
+  // 5. Filter for Call-Graph Lens
+  if (mode === "call-graph") {
+    const callGraphNodes = new Map<string, CodeNode>();
+    const callGraphEdges: CodeEdge[] = [];
 
-  return { nodes, edges };
+    for (const [id, node] of nodeMap.entries()) {
+      if (node.type === "function" || node.type === "method" || node.type === "component") {
+        callGraphNodes.set(id, node);
+      }
+    }
+
+    for (const edge of edgeMap.values()) {
+      if (edge.type === "calls" && callGraphNodes.has(edge.source) && callGraphNodes.has(edge.target)) {
+        callGraphEdges.push(edge);
+      }
+    }
+
+    // If call graph has nodes, return call graph lens
+    if (callGraphNodes.size > 0) {
+      return {
+        nodes: Array.from(callGraphNodes.values()),
+        edges: callGraphEdges,
+      };
+    }
+  }
+
+  // 6. Focused Lens Subgraph
+  if (mode === "focused" && focusFiles && focusFiles.length > 0) {
+    const focusSet = new Set<string>();
+
+    for (const ff of focusFiles) {
+      const lower = ff.toLowerCase();
+      for (const [id, node] of nodeMap.entries()) {
+        if (id.toLowerCase().includes(lower) || node.path.toLowerCase().includes(lower)) {
+          focusSet.add(id);
+        }
+      }
+    }
+
+    // 1-hop & 2-hop neighborhood expansion
+    const expandedNodes = new Map<string, CodeNode>();
+    const expandedEdges: CodeEdge[] = [];
+
+    for (const edge of edgeMap.values()) {
+      if (focusSet.has(edge.source) || focusSet.has(edge.target)) {
+        if (nodeMap.has(edge.source)) expandedNodes.set(edge.source, nodeMap.get(edge.source)!);
+        if (nodeMap.has(edge.target)) expandedNodes.set(edge.target, nodeMap.get(edge.target)!);
+        expandedEdges.push(edge);
+      }
+    }
+
+    if (expandedNodes.size > 0) {
+      return {
+        nodes: Array.from(expandedNodes.values()),
+        edges: expandedEdges,
+      };
+    }
+  }
+
+  return {
+    nodes: Array.from(nodeMap.values()),
+    edges: Array.from(edgeMap.values()),
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Focused Subgraph Builder
-// ---------------------------------------------------------------------------
-
-/**
- * Builds a small, isolated subgraph containing only the specified focus files
- * and their parent folders / connecting edges.
- */
 export function buildFocusSubgraph(
   allFiles: string[],
   focusFiles: string[]
 ): BuiltGraph {
-  if (!focusFiles || focusFiles.length === 0) {
-    return { nodes: [], edges: [] };
-  }
-
-  const hasSrc = allFiles.some((f) => f.startsWith("src/"));
-  const scopePrefix = hasSrc ? "src/" : "";
-
-  const nodeMap = new Map<string, GraphNode>();
-  const edgeSet = new Set<string>();
-  const edges: GraphEdge[] = [];
-
-  function addEdge(from: string, to: string) {
-    const key = `${from}->${to}`;
-    if (!edgeSet.has(key) && from !== to) {
-      edgeSet.add(key);
-      edges.push({ from, to });
-    }
-  }
-
-  const matchedFocusFiles = allFiles.filter((filePath) => {
-    const lowerPath = filePath.toLowerCase();
-    return focusFiles.some((ff) => {
-      const lowerFf = ff.toLowerCase();
-      return lowerPath === lowerFf || lowerPath.endsWith(lowerFf) || lowerFf.endsWith(lowerPath);
-    });
-  });
-
-  const targetFileList = matchedFocusFiles.length > 0 ? matchedFocusFiles : focusFiles;
-
-  for (const filePath of targetFileList) {
-    const topFolder = getTopLevelFolder(filePath, scopePrefix);
-    const relative =
-      scopePrefix && filePath.startsWith(scopePrefix)
-        ? filePath.slice(scopePrefix.length)
-        : filePath;
-    const filename = relative.split("/").pop() || filePath;
-
-    if (topFolder !== null) {
-      const folderId = scopePrefix + topFolder;
-      if (!nodeMap.has(folderId)) {
-        nodeMap.set(folderId, {
-          id: folderId,
-          label: topFolder,
-          type: "folder",
-        });
-      }
-
-      if (!nodeMap.has(filePath)) {
-        nodeMap.set(filePath, {
-          id: filePath,
-          label: filename,
-          type: "file",
-          isImportant: isImportantFile(filePath, scopePrefix),
-          isLowValue: false,
-        });
-      }
-
-      addEdge(folderId, filePath);
-    } else {
-      if (!nodeMap.has(filePath)) {
-        nodeMap.set(filePath, {
-          id: filePath,
-          label: filename,
-          type: "file",
-          isImportant: isImportantFile(filePath, scopePrefix),
-          isLowValue: false,
-        });
-      }
-    }
-  }
-
-  // Interconnect focus file nodes sequentially to indicate flow
-  const fileNodeIds = Array.from(nodeMap.values())
-    .filter((n) => n.type === "file")
-    .map((n) => n.id);
-
-  for (let i = 0; i < fileNodeIds.length - 1; i++) {
-    addEdge(fileNodeIds[i], fileNodeIds[i + 1]);
-  }
-
-  const nodes = Array.from(nodeMap.values());
-  return { nodes, edges };
+  return buildGraph(allFiles, "focused", undefined, undefined, focusFiles);
 }

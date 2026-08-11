@@ -156,7 +156,7 @@ function RepoPageInner() {
   const [selectedFunctionName, setSelectedFunctionName] = useState<string | null>(func);
 
   // Rebuild graph dynamically based on active graphMode and file list
-  const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo) : null;
+  const activeGraph = data ? buildGraph(data.files, graphMode, data.monorepoInfo, data.functionIndex, highlightedFiles) : null;
 
   // Build isolated flow subgraph when focusFiles are present from Q&A
   const focusSubgraph = data && focusFiles.length > 0
@@ -1205,6 +1205,13 @@ function RepoPageInner() {
                       edges={activeGraph.edges}
                       focusFile={focusFile}
                       highlightedFiles={highlightedFiles}
+                      activeMode={graphMode}
+                      onModeChange={handleModeToggle}
+                      onNodeClick={(nodeId, type) => {
+                        if (type === "file") {
+                          setViewModalFile(nodeId);
+                        }
+                      }}
                     />
                   )}
                 </div>

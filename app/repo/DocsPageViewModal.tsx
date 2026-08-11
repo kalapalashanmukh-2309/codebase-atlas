@@ -1,6 +1,7 @@
 "use client";
 
 import { type DocsPage } from "@/lib/docs-pages";
+import { type GraphMode } from "@/lib/graph-builder";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -9,7 +10,7 @@ import { type DocsPage } from "@/lib/docs-pages";
 interface DocsPageViewModalProps {
   page: DocsPage;
   onClose: () => void;
-  onOpenInGraph: (graphMode: "high-level" | "detailed", focusFiles: string[]) => void;
+  onOpenInGraph: (graphMode: GraphMode, focusFiles: string[]) => void;
   onSelectQuestion: (question: string) => void;
 }
 

@@ -1,45 +1,35 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { type CodeNode, type CodeEdge, type GraphMode, type NodeType, type RelationshipType } from "@/lib/graph-builder";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 interface RepoGraphProps {
-  nodes: {
-    id: string;
-    label: string;
-    type: "file" | "folder" | "workspace";
-    isImportant?: boolean;
-    isLowValue?: boolean;
-  }[];
-  edges: { from: string; to: string }[];
+  nodes: CodeNode[];
+  edges: CodeEdge[];
   focusFile?: string | null;
   highlightedFiles?: string[];
+  activeMode?: GraphMode;
+  onModeChange?: (mode: GraphMode) => void;
+  onNodeClick?: (nodeId: string, nodeType: NodeType) => void;
 }
 
 // ---------------------------------------------------------------------------
-// Types for react-force-graph (ForceGraph2D)
+// ForceGraph2D Types
 // ---------------------------------------------------------------------------
-
-interface GraphNode {
-  id: string;
-  label: string;
-  type: "file" | "folder" | "workspace";
-  isImportant?: boolean;
-  isLowValue?: boolean;
-  x?: number;
-  y?: number;
-}
 
 interface GraphLink {
   source: string | { id: string };
   target: string | { id: string };
+  type?: RelationshipType;
+  label?: string;
 }
 
 interface GraphData {
-  nodes: GraphNode[];
+  nodes: CodeNode[];
   links: GraphLink[];
 }
 
@@ -47,64 +37,111 @@ interface GraphData {
 type ForceGraph2DComponent = React.ComponentType<any>;
 
 // ---------------------------------------------------------------------------
-// Color Palette (Sci-Fi Dark Theme Visual System)
+// Styling Helpers
 // ---------------------------------------------------------------------------
 
-const COLOR_DEFAULT_FILE = "#38bdf8"; // Primary cyan-blue for standard source files
-const COLOR_IMPORTANT_FILE = "#34d399"; // Bright emerald teal accent for entry points (index, main, cli)
-const COLOR_LOW_VALUE_FILE = "#475569"; // Muted slate gray for utility / low-value files
-const COLOR_FOLDER = "#6366f1"; // Muted indigo for folder containers
-const COLOR_WORKSPACE = "#c084fc"; // Soft neon purple for monorepo workspace packages
-const COLOR_FOCUS = "#fbbf24"; // Vibrant glowing gold for Q&A focused files
-
-// Helper: Calculate node radius based on visual hierarchy
-function getNodeRadius(node: GraphNode, focused: boolean): number {
+function getNodeRadius(node: CodeNode, focused: boolean): number {
   if (focused) return 9;
-  if (node.type === "workspace") return 8;
-  if (node.isImportant) return 7;
-  if (node.type === "folder") return 6;
-  if (node.isLowValue) return 4;
-  return 5.5;
+  switch (node.type) {
+    case "workspace":
+      return 8.5;
+    case "class":
+      return 7.5;
+    case "component":
+      return 7;
+    case "folder":
+      return 6.5;
+    case "function":
+    case "interface":
+      return 6;
+    case "method":
+      return 5;
+    case "variable":
+    case "constant":
+      return 4;
+    case "file":
+    default:
+      return node.isImportant ? 7 : node.isLowValue ? 4 : 5.5;
+  }
 }
 
-// Helper: Calculate node color based on type and importance
-function getNodeColor(node: GraphNode, focused: boolean): string {
-  if (focused) return COLOR_FOCUS;
-  if (node.type === "workspace") return COLOR_WORKSPACE;
-  if (node.type === "folder") return COLOR_FOLDER;
-  if (node.isImportant) return COLOR_IMPORTANT_FILE;
-  if (node.isLowValue) return COLOR_LOW_VALUE_FILE;
-  return COLOR_DEFAULT_FILE;
+function getNodeColor(node: CodeNode, focused: boolean): string {
+  if (focused) return "#fbbf24";
+  switch (node.type) {
+    case "workspace":
+      return "#c084fc";
+    case "folder":
+      return "#64748b";
+    case "file":
+      return node.isImportant ? "#34d399" : node.isLowValue ? "#475569" : "#38bdf8";
+    case "class":
+      return "#a855f7";
+    case "interface":
+      return "#06b6d4";
+    case "function":
+      return "#10b981";
+    case "method":
+      return "#eab308";
+    case "component":
+      return "#f97316";
+    case "variable":
+    case "constant":
+      return "#94a3b8";
+    default:
+      return "#38bdf8";
+  }
 }
 
-// Helper: Safely extract string ID from link endpoint
 function getLinkId(endpoint: string | { id: string }): string {
   return typeof endpoint === "object" && endpoint !== null ? endpoint.id : endpoint;
+}
+
+function getLinkColor(link: GraphLink, hoverNode: CodeNode | null): string {
+  const type = link.type || "contains";
+
+  if (hoverNode) {
+    const sId = getLinkId(link.source);
+    const tId = getLinkId(link.target);
+    const isConnected = sId === hoverNode.id || tId === hoverNode.id;
+    if (!isConnected) return "rgba(148, 163, 184, 0.04)";
+  }
+
+  switch (type) {
+    case "calls":
+      return "#10b981";
+    case "extends":
+    case "implements":
+      return "#a855f7";
+    case "creates":
+      return "#f59e0b";
+    case "returns":
+      return "#3b82f6";
+    case "imports":
+    case "exports":
+      return "#0284c7";
+    case "contains":
+    default:
+      return "rgba(148, 163, 184, 0.25)";
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-/**
- * RepoGraph renders an interactive 2-D force-directed graph of the repo
- * structure using react-force-graph's ForceGraph2D.
- *
- * Sci-Fi Dark UI & Tooltips:
- * - HTML-styled glassmorphism floating tooltips with monospace paths & metadata badges.
- * - Deep space dark container background with subtle cyan ambient glow.
- * - Smooth 300ms fade-in, hover scaling, and camera pan transitions.
- */
 export default function RepoGraph({
   nodes,
   edges,
   focusFile,
-  highlightedFiles,
+  highlightedFiles = [],
+  activeMode = "high-level",
+  onModeChange,
+  onNodeClick,
 }: RepoGraphProps) {
-  // --- Dynamic import (canvas component can't render on the server) ---
   const [FG2D, setFG2D] = useState<ForceGraph2DComponent | null>(null);
-  const [hoverNode, setHoverNode] = useState<GraphNode | null>(null);
+  const [hoverNode, setHoverNode] = useState<CodeNode | null>(null);
   const [mountProgress, setMountProgress] = useState(0.1);
+  const [filterType, setFilterType] = useState<string>("all");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null);
@@ -115,7 +152,6 @@ export default function RepoGraph({
     });
   }, []);
 
-  // --- Smooth mount fade-in animation (300ms) ---
   useEffect(() => {
     let start: number | null = null;
     let frameId: number;
@@ -134,15 +170,29 @@ export default function RepoGraph({
     return () => cancelAnimationFrame(frameId);
   }, [nodes]);
 
-  // --- Build the data structure ForceGraph2D expects ---
-  const graphData: GraphData = useMemo(() => {
-    return {
-      nodes: nodes.map((n) => ({ ...n })),
-      links: edges.map((e) => ({ source: e.from, target: e.to })),
-    };
-  }, [nodes, edges]);
+  // Filter nodes if user selects specific entity filter
+  const filteredNodes = useMemo(() => {
+    if (filterType === "all") return nodes;
+    return nodes.filter((n) => n.type === filterType);
+  }, [nodes, filterType]);
 
-  // --- Hover Neighbors Map ---
+  const graphData: GraphData = useMemo(() => {
+    const validIds = new Set(filteredNodes.map((n) => n.id));
+    const links: GraphLink[] = edges
+      .filter((e) => validIds.has(e.from) && validIds.has(e.to))
+      .map((e) => ({
+        source: e.from,
+        target: e.to,
+        type: e.type,
+        label: e.label,
+      }));
+
+    return {
+      nodes: filteredNodes.map((n) => ({ ...n })),
+      links,
+    };
+  }, [filteredNodes, edges]);
+
   const hoverNeighborSet = useMemo(() => {
     const set = new Set<string>();
     if (!hoverNode) return set;
@@ -158,16 +208,15 @@ export default function RepoGraph({
     return set;
   }, [hoverNode, graphData]);
 
-  // --- Resize handling ---
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
+  const [dimensions, setDimensions] = useState({ width: 800, height: 550 });
 
   useEffect(() => {
     function measure() {
       if (containerRef.current) {
         setDimensions({
           width: containerRef.current.clientWidth,
-          height: 500,
+          height: 550,
         });
       }
     }
@@ -176,78 +225,75 @@ export default function RepoGraph({
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // --- D3 Force Layout Tuning ---
   useEffect(() => {
     if (fgRef.current) {
       const chargeForce = fgRef.current.d3Force("charge");
       if (chargeForce) {
-        chargeForce.strength(-350).distanceMax(650);
+        chargeForce.strength(-320).distanceMax(650);
       }
 
       const linkForce = fgRef.current.d3Force("link");
       if (linkForce) {
-        linkForce.distance(75).strength(0.4);
-      }
-
-      const centerForce = fgRef.current.d3Force("center");
-      if (centerForce) {
-        centerForce.x(dimensions.width / 2).y(dimensions.height / 2);
+        linkForce.distance(70).strength(0.4);
       }
     }
   }, [FG2D, dimensions.width, dimensions.height]);
 
-  // --- Smooth Camera Transition to Focused Node ---
   useEffect(() => {
     if (!fgRef.current || !focusFile) return;
-
     const lowerFocus = focusFile.toLowerCase();
-    const targetNode = graphData.nodes.find((n) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targetNode = graphData.nodes.find((n: any) => {
       const lowerId = n.id.toLowerCase();
       return lowerId === lowerFocus || lowerId.endsWith(lowerFocus) || lowerFocus.endsWith(lowerId);
     });
 
-    if (targetNode && targetNode.x !== undefined && targetNode.y !== undefined) {
-      fgRef.current.centerAt(targetNode.x, targetNode.y, 350);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (targetNode && (targetNode as any).x !== undefined && (targetNode as any).y !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fgRef.current.centerAt((targetNode as any).x, (targetNode as any).y, 350);
       fgRef.current.zoom(2.2, 350);
     }
   }, [focusFile, graphData]);
 
-  // --- Interaction callbacks ---
-  const handleNodeClick = useCallback((node: GraphNode) => {
-    if (fgRef.current && node.x !== undefined && node.y !== undefined) {
-      fgRef.current.centerAt(node.x, node.y, 300);
-    }
-  }, []);
+  const handleNodeClick = useCallback(
+    (node: CodeNode) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (fgRef.current && (node as any).x !== undefined && (node as any).y !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fgRef.current.centerAt((node as any).x, (node as any).y, 300);
+      }
+      if (onNodeClick) {
+        onNodeClick(node.id, node.type);
+      }
+    },
+    [onNodeClick]
+  );
 
-  const handleNodeHover = useCallback((node: GraphNode | null) => {
+  const handleNodeHover = useCallback((node: CodeNode | null) => {
     setHoverNode(node);
   }, []);
 
-  // --- Focus & Highlight check helper ---
   const isFocusedNode = useCallback(
-    (node: GraphNode) => {
+    (node: CodeNode) => {
       const id = node.id.toLowerCase();
-
       if (focusFile) {
         const f = focusFile.toLowerCase();
         if (id === f || id.endsWith(f) || f.endsWith(id)) return true;
       }
-
       if (highlightedFiles && highlightedFiles.length > 0) {
         return highlightedFiles.some((hf) => {
           const lowerHf = hf.toLowerCase();
           return id === lowerHf || id.endsWith(lowerHf) || lowerHf.endsWith(id);
         });
       }
-
       return false;
     },
     [focusFile, highlightedFiles]
   );
 
-  // --- Render ---
   if (!FG2D) {
-    return <p style={{ color: "#888" }}>Loading graph…</p>;
+    return <p style={{ color: "#888", padding: "1rem" }}>Loading entity graph visualizer…</p>;
   }
 
   return (
@@ -258,107 +304,158 @@ export default function RepoGraph({
         border: "1px solid #1e293b",
         borderRadius: "10px",
         overflow: "hidden",
-        background: "#030712", // Deep space navy dark theme
+        background: "#030712",
         boxShadow: "0 0 25px rgba(56, 189, 248, 0.08) inset, 0 10px 30px rgba(0, 0, 0, 0.6)",
+        position: "relative",
       }}
     >
+      {/* Lens Switcher & Entity Filter Toolbar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          padding: "0.65rem 1rem",
+          background: "rgba(15, 23, 42, 0.95)",
+          borderBottom: "1px solid rgba(51, 65, 85, 0.6)",
+          zIndex: 10,
+        }}
+      >
+        {/* Lens Mode Buttons */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <span style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase", marginRight: "0.3rem" }}>
+            LENS:
+          </span>
+          {(["high-level", "detailed", "call-graph", "focused"] as GraphMode[]).map((mode) => {
+            const isActive = activeMode === mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => onModeChange && onModeChange(mode)}
+                style={{
+                  padding: "0.25rem 0.65rem",
+                  borderRadius: "5px",
+                  fontSize: "0.76rem",
+                  fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: "pointer",
+                  border: isActive ? "1px solid #38bdf8" : "1px solid rgba(51, 65, 85, 0.5)",
+                  background: isActive ? "rgba(56, 189, 248, 0.18)" : "rgba(30, 41, 59, 0.5)",
+                  color: isActive ? "#38bdf8" : "#94a3b8",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {mode === "high-level"
+                  ? "🏰 High-Level"
+                  : mode === "detailed"
+                  ? "🔬 Detailed Entities"
+                  : mode === "call-graph"
+                  ? "⚡ Call Graph"
+                  : "🎯 Focused"}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Entity Type Filter */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+          <span style={{ fontSize: "0.72rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
+            FILTER:
+          </span>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            style={{
+              padding: "0.25rem 0.5rem",
+              borderRadius: "4px",
+              background: "#0f172a",
+              border: "1px solid rgba(56, 189, 248, 0.3)",
+              color: "#cbd5e1",
+              fontSize: "0.76rem",
+              fontFamily: "ui-monospace, monospace",
+            }}
+          >
+            <option value="all">All Node Types</option>
+            <option value="file">📄 Files</option>
+            <option value="class">🟣 Classes</option>
+            <option value="interface">🔷 Interfaces</option>
+            <option value="function">🔵 Functions</option>
+            <option value="method">⚡ Methods</option>
+            <option value="component">🧱 Components</option>
+            <option value="folder">📁 Folders</option>
+          </select>
+        </div>
+      </div>
+
       <FG2D
         ref={fgRef}
         graphData={graphData}
         width={dimensions.width}
-        height={dimensions.height}
-        /* ---- Custom Node Rendering with Subtle Animations & Glow ---- */
-        nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          const label = node.label;
+        height={dimensions.height - 45}
+        nodeCanvasObject={(node: CodeNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          const label = node.label || node.name;
           const focused = isFocusedNode(node);
-          const isWorkspace = node.type === "workspace";
           const isHovered = hoverNode && hoverNode.id === node.id;
           const baseRadius = getNodeRadius(node, focused);
-          
+
           const radius = baseRadius * (isHovered ? 1.25 : 1) * mountProgress;
           const color = getNodeColor(node, focused);
-          const fontSize = (focused ? 13 : isWorkspace ? 12 : 11) / globalScale;
+          const fontSize = (focused ? 13 : 11) / globalScale;
 
-          if (node.x === undefined || node.y === undefined) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const nx = (node as any).x;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ny = (node as any).y;
+          if (nx === undefined || ny === undefined) return;
 
-          // Fade out nodes unrelated to current hover selection
           const isNeighbor = !hoverNode || hoverNeighborSet.has(node.id);
           ctx.save();
           ctx.globalAlpha = (isNeighbor ? 1.0 : 0.2) * mountProgress;
 
-          // Outer halo glow for focused node
           if (focused) {
             ctx.beginPath();
-            ctx.arc(node.x, node.y, radius + 6, 0, 2 * Math.PI, false);
+            ctx.arc(nx, ny, radius + 6, 0, 2 * Math.PI, false);
             ctx.fillStyle = "rgba(251, 191, 36, 0.35)";
             ctx.fill();
           }
 
-          // Outer cyan aura for hovered node
           if (isHovered) {
             ctx.beginPath();
-            ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
+            ctx.arc(nx, ny, radius + 5, 0, 2 * Math.PI, false);
             ctx.fillStyle = "rgba(56, 189, 248, 0.4)";
             ctx.fill();
           }
 
-          // Node circle with canvas radial shadow blur glow
           ctx.beginPath();
-          ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-          ctx.shadowBlur = (focused ? 12 : isHovered ? 10 : node.isImportant ? 7 : 4) / globalScale;
+          ctx.arc(nx, ny, radius, 0, 2 * Math.PI, false);
+          ctx.shadowBlur = (focused ? 12 : isHovered ? 10 : 4) / globalScale;
           ctx.shadowColor = color;
           ctx.fillStyle = color;
           ctx.fill();
 
-          // Reset shadowBlur for stroke and label text
           ctx.shadowBlur = 0;
           ctx.strokeStyle = focused ? "#ffffff" : "rgba(255, 255, 255, 0.3)";
           ctx.lineWidth = (focused ? 2 : 0.6) / globalScale;
           ctx.stroke();
 
-          // Label rendering (focused nodes, hovered nodes, workspaces when zoomed in slightly, or general nodes when zoomed in)
-          if (focused || isHovered || (isWorkspace && globalScale > 1.3) || globalScale > 1.8) {
-            ctx.font = `${focused || node.isImportant || isWorkspace ? "bold " : ""}${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, monospace`;
+          if (focused || isHovered || globalScale > 1.4) {
+            ctx.font = `${focused ? "bold " : ""}${fontSize}px ui-monospace, SFMono-Regular, monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillStyle = focused
-              ? "#fbbf24"
-              : isWorkspace
-              ? "#e9d5ff"
-              : node.isImportant
-              ? "#6ee7b7"
-              : "#f8fafc";
-            ctx.fillText(label, node.x, node.y + radius + fontSize + 2);
+            ctx.fillStyle = focused ? "#fbbf24" : "#f8fafc";
+            ctx.fillText(label, nx, ny + radius + fontSize + 2);
           }
 
           ctx.restore();
         }}
-        /* ---- Custom Futuristic Monospace HTML Floating Tooltip ---- */
-        nodeLabel={(node: GraphNode) => {
-          const typeBadge =
-            node.type === "workspace"
-              ? "📦 WORKSPACE"
-              : node.type === "folder"
-              ? "📁 FOLDER CONTAINER"
-              : node.isImportant
-              ? "⭐ KEY ENTRY FILE"
-              : node.isLowValue
-              ? "📄 UTILITY MODULE"
-              : "📄 SOURCE MODULE";
-
-          const badgeColor =
-            node.type === "workspace"
-              ? "#c084fc"
-              : node.type === "folder"
-              ? "#818cf8"
-              : node.isImportant
-              ? "#34d399"
-              : node.isLowValue
-              ? "#94a3b8"
-              : "#38bdf8";
-
-          const cleanPath = node.id.replace(/^workspace:/, "");
-          const ext = cleanPath.includes(".") ? cleanPath.split(".").pop() || "" : "";
+        nodeLabel={(node: CodeNode) => {
+          const typeBadge = `${node.type.toUpperCase()}`;
+          const badgeColor = getNodeColor(node, false);
+          const lineInfo = node.startLine
+            ? `Lines ${node.startLine}${node.endLine ? `–${node.endLine}` : ""}`
+            : "";
 
           return `
             <div style="
@@ -368,7 +465,7 @@ export default function RepoGraph({
               border: 1px solid rgba(56, 189, 248, 0.35);
               border-radius: 8px;
               box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.15);
-              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+              font-family: ui-monospace, SFMono-Regular, monospace;
               color: #f8fafc;
               font-size: 0.8rem;
               line-height: 1.5;
@@ -379,14 +476,13 @@ export default function RepoGraph({
                 <span style="font-size: 0.68rem; font-weight: 700; color: ${badgeColor}; letter-spacing: 0.06em;">
                   ${typeBadge}
                 </span>
-                ${ext ? `<span style="font-size: 0.65rem; color: #64748b; background: rgba(51, 65, 85, 0.5); padding: 0.1rem 0.35rem; border-radius: 3px; text-transform: uppercase;">.${ext}</span>` : ""}
+                ${lineInfo ? `<span style="font-size: 0.65rem; color: #64748b; background: rgba(51, 65, 85, 0.5); padding: 0.1rem 0.35rem; border-radius: 3px;">${lineInfo}</span>` : ""}
               </div>
               <div style="font-weight: 600; color: #f1f5f9; word-break: break-all; font-size: 0.85rem;">
-                ${cleanPath}
+                ${node.name}
               </div>
-              <div style="margin-top: 0.4rem; font-size: 0.72rem; color: #94a3b8; display: flex; gap: 0.8rem;">
-                <span>Type: <strong style="color: #cbd5e1;">${node.type}</strong></span>
-                ${node.isImportant ? '<span style="color: #34d399; font-weight: 600;">⭐ Primary Anchor</span>' : ""}
+              <div style="margin-top: 0.3rem; font-size: 0.72rem; color: #94a3b8; word-break: break-all;">
+                Path: ${node.path}
               </div>
             </div>
           `;
@@ -396,18 +492,7 @@ export default function RepoGraph({
         d3VelocityDecay={0.35}
         warmupTicks={100}
         cooldownTicks={150}
-        /* ---- Dynamic Link Appearance ---- */
-        linkColor={(link: GraphLink) => {
-          if (!hoverNode) return "rgba(56, 189, 248, 0.16)"; // Thin, subtle sci-fi cyan line by default
-
-          const sId = getLinkId(link.source);
-          const tId = getLinkId(link.target);
-          const isConnected = sId === hoverNode.id || tId === hoverNode.id;
-
-          return isConnected
-            ? "rgba(56, 189, 248, 0.95)" // Glowing cyan highlight for connected edges!
-            : "rgba(148, 163, 184, 0.04)"; // Faded out for unrelated edges
-        }}
+        linkColor={(link: GraphLink) => getLinkColor(link, hoverNode)}
         linkWidth={(link: GraphLink) => {
           if (!hoverNode) return 1;
           const sId = getLinkId(link.source);
@@ -415,13 +500,10 @@ export default function RepoGraph({
           return sId === hoverNode.id || tId === hoverNode.id ? 2.5 : 0.5;
         }}
         linkDirectionalArrowLength={(link: GraphLink) => {
-          if (!hoverNode) return 3.5;
-          const sId = getLinkId(link.source);
-          const tId = getLinkId(link.target);
-          return sId === hoverNode.id || tId === hoverNode.id ? 6 : 1.5;
+          if (link.type === "calls" || link.type === "creates") return 4.5;
+          return 3;
         }}
         linkDirectionalArrowRelPos={1}
-        /* ---- Particle Light Beams on Hover ---- */
         linkDirectionalParticles={(link: GraphLink) => {
           if (!hoverNode) return 0;
           const sId = getLinkId(link.source);
@@ -430,8 +512,7 @@ export default function RepoGraph({
         }}
         linkDirectionalParticleWidth={2.5}
         linkDirectionalParticleSpeed={0.008}
-        linkDirectionalParticleColor={() => "#38bdf8"}
-        /* ---- Interaction ---- */
+        linkDirectionalParticleColor={(link: GraphLink) => getLinkColor(link, null)}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
       />

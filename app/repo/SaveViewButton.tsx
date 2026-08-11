@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { saveView } from "@/lib/saved-views";
+import { type GraphMode } from "@/lib/graph-builder";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -9,7 +10,7 @@ import { saveView } from "@/lib/saved-views";
 
 interface SaveViewButtonProps {
   repoUrl: string;
-  graphMode: "high-level" | "detailed";
+  graphMode: GraphMode;
   focusFiles?: string[];
   onSaved?: () => void;
 }

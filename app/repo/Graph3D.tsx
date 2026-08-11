@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState, Component, type ReactNode } from "react";
-import type { GraphNode, GraphEdge } from "@/lib/github";
+import type { CodeNode, CodeEdge, NodeType } from "@/lib/graph-builder";
 
 // ---------------------------------------------------------------------------
 // Dynamic Import for 3D Canvas Component (SSR disabled)
@@ -71,10 +71,10 @@ class Graph3DErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 // ---------------------------------------------------------------------------
 
 export interface Graph3DWrapperProps {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
+  nodes: CodeNode[];
+  edges: CodeEdge[];
   highlightedFiles?: string[];
-  onNodeClick?: (nodeId: string, nodeType: "file" | "folder" | "workspace") => void;
+  onNodeClick?: (nodeId: string, nodeType: NodeType) => void;
   onFallbackTo2D?: () => void;
 }
 
@@ -138,7 +138,6 @@ export default function Graph3D({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-      {/* Large graph warning notice */}
       {isLargeGraph && (
         <div
           style={{

@@ -20,11 +20,13 @@ export interface FunctionDetailInfo {
   callCount: number;
 }
 
+import { type GraphMode } from "@/lib/graph-builder";
+
 interface FunctionDetailModalProps {
   functionName: string;
   detail?: FunctionDetailInfo;
   onClose: () => void;
-  onOpenInGraph: (graphMode: "high-level" | "detailed", focusFiles: string[]) => void;
+  onOpenInGraph: (graphMode: GraphMode, focusFiles: string[]) => void;
   onJumpToCode: (file: string, startLine: number, endLine: number) => void;
 }
 
