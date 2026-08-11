@@ -491,6 +491,28 @@ export function buildGraph(
     }
   }
 
+  // Cross-file symbol resolution for CALLS, CREATES, and EXTENDS edges
+  for (const edge of Array.from(edgeMap.values())) {
+    if (!nodeMap.has(edge.target)) {
+      const targetSymbol = edge.target.split("::").pop();
+      if (targetSymbol) {
+        const matchingNode = Array.from(nodeMap.values()).find(
+          (n) => n.name === targetSymbol && n.id !== edge.source
+        );
+        if (matchingNode) {
+          edgeMap.delete(edge.id);
+          const newEdgeId = `${edge.source}-[${edge.type}]->${matchingNode.id}`;
+          edgeMap.set(newEdgeId, {
+            ...edge,
+            id: newEdgeId,
+            target: matchingNode.id,
+            to: matchingNode.id,
+          });
+        }
+      }
+    }
+  }
+
   // 4. Incorporate Function Index for Call Graphs & Cross-file Call Edges
   if (functionIndex) {
     for (const [funcName, record] of Object.entries(functionIndex)) {
