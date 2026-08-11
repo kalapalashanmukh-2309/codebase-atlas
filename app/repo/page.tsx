@@ -1705,7 +1705,7 @@ function RepoPageInner() {
                     <span>🌊</span> Focused Flow Subgraph ({focusSubgraph.nodes.length} Nodes)
                   </h4>
                   <span style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                    Isolated execution flow topology
+                    Relevant dependency neighborhood topology
                   </span>
                 </div>
 
